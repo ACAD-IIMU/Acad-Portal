@@ -19,9 +19,13 @@ export default function LoginPage() {
   useEffect(() => {
     let active = true;
     const supabase = createClient();
+    const hasErrorParam = new URLSearchParams(window.location.search).has('error');
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return;
-      if (session) {
+      // Defense-in-depth: if /auth/callback sent us here with an error, show it —
+      // even if a session happens to still be active — rather than silently
+      // bouncing to Home and hiding whatever went wrong.
+      if (session && !hasErrorParam) {
         router.replace('/home');
       } else {
         setCheckingSession(false);
