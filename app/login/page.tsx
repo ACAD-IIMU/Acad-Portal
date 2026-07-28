@@ -1,24 +1,69 @@
 'use client';
 
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
+  const router = useRouter();
+  // Starts true so we never flash the "Continue with Google" button at someone
+  // who's actually already signed in (see the two effects below).
+  const [checkingSession, setCheckingSession] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Case 1: this /login document is still live (e.g. the user pressed Back and
+  // landed here) but they already hold a valid session. Bounce them forward to
+  // Home instead of showing a stale sign-in screen.
+  useEffect(() => {
+    let active = true;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return;
+      if (session) {
+        router.replace('/home');
+      } else {
+        setCheckingSession(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  // Case 2: the browser restores this page from the back/forward cache (bfcache)
+  // after a Back press — a pure client-side restore with no network request, so
+  // the effect above never gets a chance to re-run. `pageshow` with
+  // `event.persisted` is the standard signal for that; forcing a reload makes it
+  // hit the server again, which re-runs the check above with fresh state.
+  useEffect(() => {
+    function handlePageShow(event: PageTransitionEvent) {
+      if (event.persisted) {
+        window.location.reload();
+      }
+    }
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
 
   async function signIn() {
     setLoading(true);
     setError(null);
     const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithOAuth({
+    const { data, error: signInError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
         // Calendar scope requested upfront at login (not incremental) — keeps the
         // "Add to Google Calendar" button on Home a single click, no second consent screen.
         scopes: 'openid email profile https://www.googleapis.com/auth/calendar.events',
+        // We navigate ourselves (below) instead of letting supabase-js do
+        // `location.href =`, so we can use `location.replace()` — that swaps this
+        // /login entry out for Google's consent page in browser history instead
+        // of stacking a new entry on top of it. One less hop for the back
+        // button to walk through after landing on Home.
+        skipBrowserRedirect: true,
         queryParams: {
           access_type: 'offline', // needed to receive a refresh_token, not just an access_token
           prompt: 'consent',      // forces Google to re-issue the refresh_token every sign-in
@@ -29,7 +74,17 @@ export default function LoginPage() {
     if (signInError) {
       setError(signInError.message);
       setLoading(false);
+      return;
     }
+    if (data?.url) {
+      window.location.replace(data.url);
+    }
+  }
+
+  if (checkingSession) {
+    // Deliberately blank/minimal — this resolves in one client-side check
+    // against local session state, so it's on screen for a beat at most.
+    return <main className="min-h-screen" />;
   }
 
   return (

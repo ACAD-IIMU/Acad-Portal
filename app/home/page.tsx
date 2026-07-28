@@ -3,6 +3,7 @@ import TodaysClasses from './TodaysClasses';
 import Reminders from './Reminders';
 import QuickLinks from './QuickLinks';
 import MonthView from './MonthView';
+import UserMenu from './UserMenu';
 
 // TODO: move to a `terms` table once ACAD confirms the real term date-range source
 // (flagged as an open item in the Data Requirements Log, DR-1/DR-7). Hardcoded for now
@@ -40,9 +41,16 @@ export default async function HomePage() {
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8 flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl">Welcome, {student?.full_name?.split(' ')[0] ?? 'there'}</h1>
-        <p className="text-inkFaint text-sm">Here&apos;s what&apos;s on today.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl">Welcome, {student?.full_name?.split(' ')[0] ?? 'there'}</h1>
+          <p className="text-inkFaint text-sm">Here&apos;s what&apos;s on today.</p>
+        </div>
+        <UserMenu
+          name={student?.full_name ?? 'Student'}
+          regNo={student?.reg_no}
+          batchLabel={student?.batch_label}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-5">
