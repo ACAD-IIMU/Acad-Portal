@@ -1,0 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-cream text-ink font-body;
+}
+
+h1, h2, h3 {
+  @apply font-display font-semibold text-brand-950;
+}
+
+.card {
+  @apply bg-white border border-line rounded-card shadow-sm;
+}
