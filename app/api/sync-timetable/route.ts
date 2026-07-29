@@ -19,6 +19,11 @@ function isAuthorized(req: Request): boolean {
 const FILE_ID = "1OjH92BHuiKBIqai-YTiR0Hx2DFZ2lkpM"; // MBA 2025-27 Batch Timetable.xlsx
 const TERM = "Term IV";
 
+// Known abbreviations used in the sheet that don't normalize-match the full subject name.
+const EVENT_CODE_ALIASES: Record<string, string> = {
+  REV: "REVMGMT" // "ReV" alone, used in the end-of-term exam block, for "Rev Mgmt"
+};
+
 export async function GET(req: Request) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -139,7 +144,13 @@ export async function GET(req: Request) {
     label: e.label,
     // Reuses the same subject map already built for sessions above — no extra query needed.
     // Null is fine here (e.g. "Registration" has no subject); the column allows it.
-    subject_id: e.subjectCodeRaw ? subjectByNormCode.get(normalizeCode(e.subjectCodeRaw)) ?? null : null
+    // "ReV" alone (no "Mgmt") shows up in the end-of-term exam block for Rev Mgmt — same
+    // category as the TS:ADR/TS-ADR alias handled during the enrollment import.
+    subject_id: e.subjectCodeRaw
+      ? subjectByNormCode.get(normalizeCode(e.subjectCodeRaw)) ??
+        subjectByNormCode.get(EVENT_CODE_ALIASES[normalizeCode(e.subjectCodeRaw)] ?? "") ??
+        null
+      : null
   }));
 
   const { error: deleteEventsErr } = await supabase.from("important_events").delete().eq("term", TERM);
