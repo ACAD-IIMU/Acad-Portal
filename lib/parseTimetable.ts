@@ -34,6 +34,12 @@ export interface TimeSlot {
 const SESSION_RE_GLOBAL =
   /(.*?)\s*(?:\(([A-Z])\))?\s*-\s*S(\d+)(?:\(DB\))?\s*\(([^)]+)\)/g;
 
+// Joint-section pattern: e.g. "MG (A) & (B) - S13(DB) (CR-8B-18)" — both sections attend
+// the same physical session together (seen recurring for MG roughly every 3-4 weeks).
+// One match here becomes TWO session rows (one per section), same time/room/session number.
+const JOINT_SECTION_RE =
+  /(.*?)\s*\(([A-Z])\)\s*&\s*\(([A-Z])\)\s*-\s*S(\d+)(?:\(DB\))?\s*\(([^)]+)\)/g;
+
 interface RawMatch {
   rawCode: string;
   section: string | null;
@@ -41,26 +47,57 @@ interface RawMatch {
   room: string;
 }
 
-function extractSessionsFromChunk(chunk: string): { matches: RawMatch[]; leftover: string[] } {
+function scanWithGlobalRegex(
+  chunk: string,
+  regex: RegExp,
+  toMatches: (m: RegExpExecArray) => RawMatch[]
+): { matches: RawMatch[]; leftover: string[] } {
   const matches: RawMatch[] = [];
   const leftover: string[] = [];
   let lastEnd = 0;
-  const re = new RegExp(SESSION_RE_GLOBAL); // fresh instance — avoids shared lastIndex bugs across calls
+  const re = new RegExp(regex); // fresh instance — avoids shared lastIndex bugs across calls
   let m: RegExpExecArray | null;
   while ((m = re.exec(chunk)) !== null) {
     const between = chunk.slice(lastEnd, m.index).trim();
     if (between) leftover.push(between);
-    matches.push({
-      rawCode: m[1].trim(),
-      section: m[2] ?? null,
-      sessionNumber: parseInt(m[3], 10),
-      room: m[4].trim(),
-    });
+    matches.push(...toMatches(m));
     lastEnd = re.lastIndex;
     if (m.index === re.lastIndex) re.lastIndex++; // guard against zero-width matches
   }
   const tail = chunk.slice(lastEnd).trim();
   if (tail) leftover.push(tail);
+  return { matches, leftover };
+}
+
+function extractSessionsFromChunk(chunk: string): { matches: RawMatch[]; leftover: string[] } {
+  // Stage 1: joint-section pattern first, since it's a strict superset shape of the normal
+  // one and would otherwise get mis-consumed by the single-section scan (the "&" and second
+  // section would just get swallowed into a garbled rawCode instead of recognized as intentional).
+  const stage1 = scanWithGlobalRegex(chunk, JOINT_SECTION_RE, (m) => {
+    const [, rawCode, sec1, sec2, snStr, room] = m;
+    const sessionNumber = parseInt(snStr, 10);
+    return [
+      { rawCode: rawCode.trim(), section: sec1, sessionNumber, room: room.trim() },
+      { rawCode: rawCode.trim(), section: sec2, sessionNumber, room: room.trim() },
+    ];
+  });
+
+  // Stage 2: normal single-section pattern, run on whatever stage 1 didn't claim.
+  const matches = [...stage1.matches];
+  const leftover: string[] = [];
+  for (const piece of stage1.leftover) {
+    const stage2 = scanWithGlobalRegex(piece, SESSION_RE_GLOBAL, (m) => [
+      {
+        rawCode: m[1].trim(),
+        section: m[2] ?? null,
+        sessionNumber: parseInt(m[3], 10),
+        room: m[4].trim(),
+      },
+    ]);
+    matches.push(...stage2.matches);
+    leftover.push(...stage2.leftover);
+  }
+
   return { matches, leftover };
 }
 
