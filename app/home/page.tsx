@@ -61,11 +61,17 @@ export default async function HomePage() {
     .lte('session_date', TERM_END)
     .order('session_date');
 
-  const { data: importantEvents } = await supabase
+  const { data: upcomingEvents } = await supabase
     .from('important_events')
     .select('*, subjects(name)')
     .eq('term', CURRENT_TERM)
     .gte('event_date', today)
+    .order('event_date');
+
+  const { data: allTermEvents } = await supabase
+    .from('important_events')
+    .select('*, subjects(name)')
+    .eq('term', CURRENT_TERM)
     .order('event_date');
 
   return (
@@ -91,7 +97,7 @@ export default async function HomePage() {
         />
         <div className="flex flex-col gap-5">
           <QuickLinks />
-          <Reminders events={importantEvents ?? []} />
+          <Reminders events={upcomingEvents ?? []} />
         </div>
       </div>
 
@@ -100,7 +106,7 @@ export default async function HomePage() {
         termLabel={CURRENT_TERM}
         termStart={TERM_START}
         termEnd={TERM_END}
-        importantEvents={importantEvents ?? []}
+        importantEvents={allTermEvents ?? []}
       />
     </main>
   );
