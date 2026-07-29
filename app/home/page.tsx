@@ -3,6 +3,10 @@ import TodaysClasses from './TodaysClasses';
 import Reminders from './Reminders';
 import QuickLinks from './QuickLinks';
 import MonthView from './MonthView';
+
+// This page is per-student personalized (enrollments, own sessions, own events) — it must
+// never be statically cached or served stale to a different logged-in user.
+export const dynamic = 'force-dynamic';
 import UserMenu from './UserMenu';
 
 const CURRENT_TERM = 'Term IV';

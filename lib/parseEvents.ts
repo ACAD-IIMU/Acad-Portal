@@ -7,11 +7,10 @@ export interface ParsedEvent {
   subjectCodeRaw: string | null;
 }
 
-// Stage 1: just find WHERE each event keyword occurs (code + keyword only — number and
-// time are extracted separately per match below, since a single mega-regex made it too easy
-// for a trailing time's leading digit to get misread as a quiz instance number).
-const KEYWORD_RE =
-  /([A-Za-z0-9:&.()]+(?:\s[A-Za-z0-9:&.()]+)*?)\s+(Quiz|Mid\s*Term\s*Exam|End\s*Term\s*Exam)/gi;
+// Stage 1: bare keyword positions only — code, number, and time are all resolved
+// afterward via explicit position-tracking (see below), not via regex leftmost-match
+// behavior, which turned out to depend on accidental spacing quirks in the source data.
+const KEYWORD_RE = /(Quiz|Mid\s*Term\s*Exam|End\s*Term\s*Exam)/gi;
 
 // End-of-term block shorthand: "MoB => 9.30 am", "CV & TS:ADR => 9.30 am"
 const ARROW_EXAM_RE = /([A-Za-z0-9:&.()\s]+?)\s*=>\s*(\d{1,2}[.:]\d{2}\s*[ap]m)/gi;
@@ -22,28 +21,26 @@ const OTHER_EVENT_RE = /(Registration|Tutorial\s*\d*|Guest\s*Session|Additional\
 function classifyType(keyword: string): "quiz" | "endterm" | "other" {
   const k = keyword.toLowerCase();
   if (k.includes("quiz")) return "quiz";
-  // Both Mid Term and End Term map to 'endterm' — the schema only distinguishes
-  // quiz/endterm/other, and both are significant proctored exams (vs. a quiz), so this
-  // is the closer bucket. The label text itself still says "Mid Term" vs "End Term".
   if (k.includes("term exam")) return "endterm";
   return "other";
 }
 
-/** Extracts, from the text between one event keyword and the next (or end of string): a real
- * instance number if present, and the first clock time if present — each scoped only to this
- * one event, so a combined string with several quizzes/exams doesn't cross-contaminate. */
-function extractNumberAndTime(tailSlice: string): { num: string | null; time: string | null } {
-  // A real instance number sits right after the keyword via a hyphen (spacing on either side
-  // varies in the source — "Quiz-1" and "Quiz - 1" both occur) but must NOT be immediately
-  // followed by a decimal point or colon + digit, which would mean it's actually the leading
-  // digit of a clock time (e.g. the "2" in "Quiz - 2.30 pm" is not instance number 2).
-  const numMatch = tailSlice.match(/^\s*-\s*(\d+)(?![.:]\d)/);
-  const num = numMatch ? numMatch[1] : null;
-
-  const timeMatch = tailSlice.match(/(\d{1,2})[.:](\d{2})\s*([ap]m)/i);
-  const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]} ${timeMatch[3].toUpperCase()}` : null;
-
-  return { num, time };
+/** Strips known leftover noise from the front of a code candidate — connector words,
+ * dash separators, and time/range remnants that a neighboring event's own number or
+ * time-range extraction didn't fully consume. Applied in a loop since these can stack
+ * (e.g. a range's closing paren followed by a dash separator). */
+function stripLeadingNoise(text: string): string {
+  let prev: string;
+  do {
+    prev = text;
+    text = text
+      .replace(/^\s*\)/, "") // stray closing paren left over from a time range
+      .replace(/^\s*-?\s*\d{1,2}[.:]\d{2}\s*[ap]m\)?/i, "") // leftover time / range end, e.g. "-3:15pm)"
+      .replace(/^\s*-{2,}/, "") // dash separators like "-------"
+      .replace(/^\s*(and)\b/i, "") // connector word
+      .trim();
+  } while (text !== prev);
+  return text;
 }
 
 function extractEventsFromText(
@@ -53,16 +50,39 @@ function extractEventsFromText(
 
   if (keywordMatches.length > 0) {
     const events: Array<{ subjectCodeRaw: string | null; type: "quiz" | "endterm" | "other"; label: string }> = [];
-    for (let i = 0; i < keywordMatches.length; i++) {
-      const m = keywordMatches[i];
-      const code = m[1].trim();
-      const keyword = m[2].replace(/\s+/g, " ").trim();
-      const type = classifyType(keyword);
-      const matchEnd = (m.index ?? 0) + m[0].length;
-      const nextStart = i + 1 < keywordMatches.length ? keywordMatches[i + 1].index ?? rawText.length : rawText.length;
-      const tailSlice = rawText.slice(matchEnd, nextStart);
+    let cursor = 0; // where the next event's code search starts — advances past each event's own consumed number+time
 
-      const { num, time } = extractNumberAndTime(tailSlice);
+    for (let i = 0; i < keywordMatches.length; i++) {
+      const kw = keywordMatches[i];
+      const keyword = kw[1].replace(/\s+/g, " ").trim();
+      const keywordStart = kw.index ?? 0;
+      const keywordEnd = keywordStart + kw[0].length;
+
+      const code = stripLeadingNoise(rawText.slice(cursor, keywordStart));
+
+      // Tightly-bound instance number right after the keyword (e.g. "Quiz-1"), guarded
+      // against misreading a clock time's leading digit as a number (e.g. the "2" in
+      // "Quiz - 2.30 pm" is not instance number 2).
+      const afterKeyword = rawText.slice(keywordEnd);
+      const numMatch = afterKeyword.match(/^\s*-\s*(\d+)(?![.:]\d)/);
+      const num = numMatch ? numMatch[1] : null;
+      const consumedAfterKeyword = numMatch ? numMatch[0].length : 0;
+
+      // Time: search only up to the NEXT keyword's start (or end of string) — never past
+      // it, so a time or noise word belonging to the next event can't bleed into this one.
+      const nextKeywordStart = i + 1 < keywordMatches.length ? keywordMatches[i + 1].index ?? rawText.length : rawText.length;
+      const windowLen = nextKeywordStart - (keywordEnd + consumedAfterKeyword);
+      const window = afterKeyword.slice(consumedAfterKeyword, consumedAfterKeyword + Math.max(0, windowLen));
+      const timeMatch = window.match(/(\d{1,2})[.:](\d{2})\s*([ap]m)/i);
+      const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]} ${timeMatch[3].toUpperCase()}` : null;
+      const timeEnd = timeMatch ? (timeMatch.index ?? 0) + timeMatch[0].length : 0;
+
+      // Advance the cursor past everything just consumed for THIS event (number + its
+      // first time mention) — the noise-stripper above handles anything still left over
+      // from a time range's closing half or a trailing separator.
+      cursor = keywordEnd + consumedAfterKeyword + timeEnd;
+
+      const type = classifyType(keyword);
       let label = type === "quiz" && num ? `${code} Quiz ${num}` : `${code} ${keyword}`;
       if (time) label += ` — ${time}`;
       events.push({ subjectCodeRaw: code, type, label: label.trim() });
