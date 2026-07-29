@@ -15,8 +15,8 @@ export default function Reminders({ events }: { events: EventRow[] }) {
       const daysAway = Math.round((d.getTime() - today.getTime()) / 86400000);
       return { ...e, daysAway };
     })
-    .filter((e) => e.daysAway >= 0)
-    .slice(0, 2);
+    .filter((e) => e.daysAway >= 0 && e.daysAway <= 10)
+    .slice(0, 5); // safety cap in case several genuinely fall within the window at once
 
   return (
     <div className="card p-5">

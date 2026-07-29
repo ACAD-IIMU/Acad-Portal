@@ -5,12 +5,11 @@ import QuickLinks from './QuickLinks';
 import MonthView from './MonthView';
 import UserMenu from './UserMenu';
 
-// TODO: move to a `terms` table once ACAD confirms the real term date-range source
-// (flagged as an open item in the Data Requirements Log, DR-1/DR-7). Hardcoded for now
-// so the month view has real boundaries to navigate within.
 const CURRENT_TERM = 'Term IV';
-const TERM_START = '2026-01-12';
-const TERM_END = '2026-03-20';
+// Fallback only — used if no sessions exist yet for the term (e.g. before the timetable
+// sync has run). Once real sessions exist, the actual range below always wins.
+const FALLBACK_TERM_START = '2026-06-07';
+const FALLBACK_TERM_END = '2026-08-28';
 
 export default async function HomePage() {
   const supabase = createClient();
@@ -29,6 +28,25 @@ export default async function HomePage() {
     month: 'short',
     timeZone: 'Asia/Kolkata'
   });
+
+  const { data: earliestSession } = await supabase
+    .from('sessions')
+    .select('session_date')
+    .eq('term', CURRENT_TERM)
+    .order('session_date', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: latestSession } = await supabase
+    .from('sessions')
+    .select('session_date')
+    .eq('term', CURRENT_TERM)
+    .order('session_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const TERM_START = earliestSession?.session_date ?? FALLBACK_TERM_START;
+  const TERM_END = latestSession?.session_date ?? FALLBACK_TERM_END;
 
   const { data: todaysSessions } = await supabase
     .from('sessions')
@@ -65,7 +83,12 @@ export default async function HomePage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-5">
-        <TodaysClasses sessions={todaysSessions ?? []} batchLabel={student?.batch_label} todayLabel={todayLabel} />
+        <TodaysClasses
+          sessions={todaysSessions ?? []}
+          batchLabel={student?.batch_label}
+          todayLabel={todayLabel}
+          todayDate={today}
+        />
         <div className="flex flex-col gap-5">
           <QuickLinks />
           <Reminders events={importantEvents ?? []} />
