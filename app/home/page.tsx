@@ -17,7 +17,18 @@ export default async function HomePage() {
 
   const { data: student } = await supabase.from('students').select('*').single();
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Computed once, explicitly in IST — the server's own runtime timezone (UTC on
+  // Vercel) is irrelevant here. Using the same instant formatted two ways: one
+  // machine-readable (YYYY-MM-DD, for the DB query) and one for display, so both
+  // are guaranteed to agree with each other and with India's actual calendar day.
+  const now = new Date();
+  const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
+  const todayLabel = now.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'Asia/Kolkata'
+  });
 
   const { data: todaysSessions } = await supabase
     .from('sessions')
@@ -54,7 +65,7 @@ export default async function HomePage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-5">
-        <TodaysClasses sessions={todaysSessions ?? []} batchLabel={student?.batch_label} />
+        <TodaysClasses sessions={todaysSessions ?? []} batchLabel={student?.batch_label} todayLabel={todayLabel} />
         <div className="flex flex-col gap-5">
           <QuickLinks />
           <Reminders events={importantEvents ?? []} />

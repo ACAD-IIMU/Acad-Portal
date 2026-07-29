@@ -11,18 +11,18 @@ type SessionRow = {
 
 export default function TodaysClasses({
   sessions,
-  batchLabel
+  batchLabel,
+  todayLabel
 }: {
   sessions: SessionRow[];
   batchLabel?: string;
+  todayLabel: string;
 }) {
-  const today = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-base">Today&apos;s classes</h2>
-        <span className="text-xs text-inkFaint">{today}{batchLabel ? ` · ${batchLabel}` : ''}</span>
+        <span className="text-xs text-inkFaint">{todayLabel}{batchLabel ? ` · ${batchLabel}` : ''}</span>
       </div>
 
       {sessions.length === 0 && (
