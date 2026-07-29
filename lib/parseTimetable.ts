@@ -34,6 +34,20 @@ const SESSION_RE =
 
 const NO_CLASS_MARKERS = new Set(["---", "<=>", "", "--"]);
 
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+/** True only if the text's leading word is an actual month name (>= 3 letters) — deliberately
+ * excludes short week labels like "W-1"/"W-12" regardless of digit count, and is tolerant of
+ * whatever quote character (straight/curly/none) separates the month name from the year. */
+function isMonthLabel(text: string): boolean {
+  const m = text.match(/^([A-Za-z]{3,})/);
+  if (!m) return false;
+  return MONTH_NAMES[m[1].slice(0, 3).toLowerCase()] !== undefined;
+}
+
 export function normalizeCode(code: string): string {
   return code.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -41,7 +55,7 @@ export function normalizeCode(code: string): string {
 /** Splits a cell's text into individual class entries (cells can hold several "/"-separated concurrent classes). */
 function splitCellEntries(cellText: string): string[] {
   return cellText
-    .split("/")
+    .split(/[\/\n]/)
     .map((s) => s.replace(/\s+/g, " ").trim())
     .filter((s) => s.length > 0);
 }
@@ -94,11 +108,12 @@ export function parseTimetableWorkbook(buffer: Buffer): {
     const monthCell = ws[XLSX.utils.encode_cell({ r: row, c: 0 })];
     if (monthCell?.v) {
       const candidate = monthCell.v.toString().trim();
-      // Column A mixes two label types: real month markers ("June '26") and week
-      // markers ("W-1", "W-2", ...). Only overwrite the carried-forward month when
-      // the text actually looks like "<MonthName> '<yy>" — otherwise a week label
-      // would silently clobber the correct month for every row after it.
-      if (/^[A-Za-z]+\s*'?\d{2,4}$/.test(candidate)) {
+      // Column A mixes two label types: real month markers ("June '26", possibly with a
+      // curly quote depending on how it was typed) and week markers ("W-1", "W-2", ...).
+      // Checking against the actual month-name list (rather than matching a specific quote
+      // character) avoids both false negatives (curly vs straight quote) and false positives
+      // (a week label like "W-10"/"W-12" that happens to have 2 digits).
+      if (isMonthLabel(candidate)) {
         currentMonthYear = candidate;
       }
     }
@@ -184,8 +199,9 @@ function isEntryStruckThrough(cell: XLSX.CellObject, entryText: string): boolean
 }
 
 function resolveDate(monthYearLabel: string, day: number, fallbackYear: number): string | null {
-  // e.g. "June '26" or "July '26" or "Aug '26"
-  const m = monthYearLabel.match(/([A-Za-z]+)\s*'?(\d{2,4})/);
+  // e.g. "June '26" (or "June '26" with a curly quote, or no quote at all) — [^0-9]*
+  // deliberately doesn't care what character (if any) sits between name and digits.
+  const m = monthYearLabel.match(/([A-Za-z]{3,})[^0-9]*(\d{2,4})/);
   if (!m) return null;
   const monthNames: Record<string, number> = {
     jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
