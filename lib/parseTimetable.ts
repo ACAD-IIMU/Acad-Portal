@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { buildStrikethroughMap, CellStrikeInfo } from "./strikethroughMap";
 
 export interface ParsedSession {
   subjectCode: string;      // normalized (A-Z0-9 only) for matching against `subjects`
@@ -108,15 +109,19 @@ function parseTimeRangeLabel(headerText: string): { startTime: string; endTime: 
   return { startTime: to24(m[1], m[3]), endTime: to24(m[2], m[3]) };
 }
 
-export function parseTimetableWorkbook(buffer: Buffer): {
+export async function parseTimetableWorkbook(buffer: Buffer): Promise<{
   sessions: ParsedSession[];
   unmapped: UnmappedEntry[];
   skippedStrikethrough: UnmappedEntry[];
-} {
+}> {
   // cellStyles + cellHTML needed to inspect strikethrough runs on individual cells
   const wb = XLSX.read(buffer, { type: "buffer", cellStyles: true, cellHTML: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const range = XLSX.utils.decode_range(ws["!ref"]!);
+
+  // Verified separately (see strikethroughMap.ts) — xlsx/exceljs cannot reliably tell struck
+  // text apart from normal text within a single cell, so this reads the raw file XML directly.
+  const strikeMap = await buildStrikethroughMap(buffer);
 
   // Row 3 (0-indexed row 2) holds the 6 session headers in columns D-I (0-indexed 3-8)
   const slots: TimeSlot[] = [];
@@ -174,22 +179,46 @@ export function parseTimetableWorkbook(buffer: Buffer): {
       const cell = ws[cellAddr];
       if (!cell?.v) continue;
       const slot = slots[col - 3];
-      const cellText = cell.v.toString();
+      const rawCellText = cell.v.toString();
+
+      const strikeInfo: CellStrikeInfo | undefined = strikeMap.get(cellAddr);
+      let cellText: string;
+
+      if (strikeInfo?.fullyStruck) {
+        // Whole cell cancelled — log once and skip entirely, no session/event matching at all.
+        skippedStrikethrough.push({
+          sessionDate,
+          slotLabel: slot.label,
+          rawText: rawCellText,
+          reason: "Struck through in source sheet — treated as cancelled, not imported",
+        });
+        continue;
+      } else if (strikeInfo?.runs) {
+        // Mixed cell: some runs struck (cancelled), some not. Strip the struck runs out
+        // BEFORE splitting/matching, so a cancelled class doesn't get imported and doesn't
+        // garble whatever quiz/tutorial/exam text sits next to it in the same cell.
+        const keptParts: string[] = [];
+        for (const run of strikeInfo.runs) {
+          if (run.struck) {
+            if (run.text.trim()) {
+              skippedStrikethrough.push({
+                sessionDate,
+                slotLabel: slot.label,
+                rawText: run.text.trim(),
+                reason: "Struck through in source sheet — treated as cancelled, not imported",
+              });
+            }
+          } else {
+            keptParts.push(run.text);
+          }
+        }
+        cellText = keptParts.join(" ");
+      } else {
+        cellText = rawCellText;
+      }
 
       for (const entryText of splitCellEntries(cellText)) {
         if (NO_CLASS_MARKERS.has(entryText)) continue;
-
-        // Strikethrough check: SheetJS exposes rich-text runs on cell.r when present.
-        // A cancelled entry (struck through in the sheet) should not become a real session.
-        if (isEntryStruckThrough(cell, entryText)) {
-          skippedStrikethrough.push({
-            sessionDate,
-            slotLabel: slot.label,
-            rawText: entryText,
-            reason: "Struck through in source sheet — treated as cancelled, not imported",
-          });
-          continue;
-        }
 
         const { matches, leftover } = extractSessionsFromChunk(entryText);
 
@@ -219,18 +248,6 @@ export function parseTimetableWorkbook(buffer: Buffer): {
   }
 
   return { sessions, unmapped, skippedStrikethrough };
-}
-
-/** Best-effort strikethrough detection on a cell's rich-text runs matching the given entry text. */
-function isEntryStruckThrough(cell: XLSX.CellObject, entryText: string): boolean {
-  const runs = (cell as any).r as Array<{ t: string; s?: { strike?: boolean } }> | undefined;
-  if (!runs) return false; // no rich-text run info available — can't tell, so don't block a real class on a guess
-  for (const run of runs) {
-    if (run.t && entryText.includes(run.t.trim()) && run.s?.strike) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function resolveDate(monthYearLabel: string, day: number, fallbackYear: number): string | null {

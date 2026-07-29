@@ -53,7 +53,7 @@ export async function GET(req: Request) {
   }
 
   // 2) Parse it.
-  const { sessions, unmapped, skippedStrikethrough } = parseTimetableWorkbook(buffer);
+  const { sessions, unmapped, skippedStrikethrough } = await parseTimetableWorkbook(buffer);
 
   // 3) Resolve subject_id / section_id via the tables already populated from the enrollment import.
   const { data: subjects, error: subjErr } = await supabase
