@@ -92,7 +92,16 @@ export function parseTimetableWorkbook(buffer: Buffer): {
 
   for (let row = 3; row <= range.e.r; row++) {
     const monthCell = ws[XLSX.utils.encode_cell({ r: row, c: 0 })];
-    if (monthCell?.v) currentMonthYear = monthCell.v.toString().trim();
+    if (monthCell?.v) {
+      const candidate = monthCell.v.toString().trim();
+      // Column A mixes two label types: real month markers ("June '26") and week
+      // markers ("W-1", "W-2", ...). Only overwrite the carried-forward month when
+      // the text actually looks like "<MonthName> '<yy>" — otherwise a week label
+      // would silently clobber the correct month for every row after it.
+      if (/^[A-Za-z]+\s*'?\d{2,4}$/.test(candidate)) {
+        currentMonthYear = candidate;
+      }
+    }
 
     const dateCell = ws[XLSX.utils.encode_cell({ r: row, c: 1 })];
     if (!dateCell?.v) continue; // blank date row — skip (covers the stray continuation rows like 54/71/89+)
