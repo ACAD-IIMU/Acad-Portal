@@ -26,11 +26,42 @@ export interface TimeSlot {
   endTime: string;
 }
 
-// Matches: "{code}[ (section)][ -] S{n}[(DB)] (room)"
-// Non-greedy .*? for the code group deliberately allows parens inside the code itself
-// (e.g. "HRM(IR)") since section markers are constrained to a single uppercase letter.
-const SESSION_RE =
-  /^(.*?)\s*(?:\(([A-Z])\))?\s*-\s*S(\d+)(?:\(DB\))?\s*\(([^)]+)\)\s*$/;
+// Same core pattern as before, but NOT anchored to start/end — used with matchAll so a
+// single chunk can yield zero, one, or several matches back-to-back (handles entries
+// stacked without a real separator), and a soft line-wrap between the "- Sn" part and
+// the "(room)" part (now normalized to a space) no longer breaks a normal single entry.
+const SESSION_RE_GLOBAL =
+  /(.*?)\s*(?:\(([A-Z])\))?\s*-\s*S(\d+)(?:\(DB\))?\s*\(([^)]+)\)/g;
+
+interface RawMatch {
+  rawCode: string;
+  section: string | null;
+  sessionNumber: number;
+  room: string;
+}
+
+function extractSessionsFromChunk(chunk: string): { matches: RawMatch[]; leftover: string[] } {
+  const matches: RawMatch[] = [];
+  const leftover: string[] = [];
+  let lastEnd = 0;
+  const re = new RegExp(SESSION_RE_GLOBAL); // fresh instance — avoids shared lastIndex bugs across calls
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(chunk)) !== null) {
+    const between = chunk.slice(lastEnd, m.index).trim();
+    if (between) leftover.push(between);
+    matches.push({
+      rawCode: m[1].trim(),
+      section: m[2] ?? null,
+      sessionNumber: parseInt(m[3], 10),
+      room: m[4].trim(),
+    });
+    lastEnd = re.lastIndex;
+    if (m.index === re.lastIndex) re.lastIndex++; // guard against zero-width matches
+  }
+  const tail = chunk.slice(lastEnd).trim();
+  if (tail) leftover.push(tail);
+  return { matches, leftover };
+}
 
 const NO_CLASS_MARKERS = new Set(["---", "<=>", "", "--"]);
 
@@ -53,9 +84,12 @@ export function normalizeCode(code: string): string {
 }
 
 /** Splits a cell's text into individual class entries (cells can hold several "/"-separated concurrent classes). */
+/** Splits a cell's text on '/' — the sheet's one intentional separator between concurrent
+ * classes. Newlines are deliberately NOT split on here (see extractSessionsFromChunk for why)
+ * — they're normalized to spaces instead, since they're often just a soft line-wrap. */
 function splitCellEntries(cellText: string): string[] {
   return cellText
-    .split(/[\/\n]/)
+    .split("/")
     .map((s) => s.replace(/\s+/g, " ").trim())
     .filter((s) => s.length > 0);
 }
@@ -157,28 +191,29 @@ export function parseTimetableWorkbook(buffer: Buffer): {
           continue;
         }
 
-        const m = entryText.match(SESSION_RE);
-        if (!m) {
+        const { matches, leftover } = extractSessionsFromChunk(entryText);
+
+        for (const match of matches) {
+          sessions.push({
+            subjectCode: normalizeCode(match.rawCode),
+            rawCode: match.rawCode,
+            sectionLabel: match.section,
+            sessionNumber: match.sessionNumber,
+            room: match.room,
+            sessionDate,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+          });
+        }
+
+        for (const stray of leftover) {
           unmapped.push({
             sessionDate,
             slotLabel: slot.label,
-            rawText: entryText,
+            rawText: stray,
             reason: "Did not match the standard '{code} (section) - Sn (room)' pattern — likely an exam/quiz/tutorial/one-off. Route manually to important_events or review.",
           });
-          continue;
         }
-
-        const [, rawCode, section, snStr, room] = m;
-        sessions.push({
-          subjectCode: normalizeCode(rawCode),
-          rawCode: rawCode.trim(),
-          sectionLabel: section ?? null,
-          sessionNumber: parseInt(snStr, 10),
-          room: room.trim(),
-          sessionDate,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-        });
       }
     }
   }
