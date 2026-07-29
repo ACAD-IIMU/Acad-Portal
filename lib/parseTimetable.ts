@@ -136,14 +136,28 @@ function parseTimeRangeLabel(headerText: string): { startTime: string; endTime: 
   // e.g. "Session 1    9.00-10.30 am" -> extract "9.00-10.30 am"
   const m = headerText.match(/(\d{1,2}[.:]\d{2})\s*-\s*(\d{1,2}[.:]\d{2})\s*([ap]m)/i);
   if (!m) return null;
-  const to24 = (t: string, meridiem: string) => {
+  const toMinutes = (t: string, isPM: boolean) => {
     let [h, min] = t.replace(",", ".").split(/[.:]/).map(Number);
-    const isPM = /pm/i.test(meridiem);
     if (isPM && h !== 12) h += 12;
     if (!isPM && h === 12) h = 0;
-    return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+    return h * 60 + min;
   };
-  return { startTime: to24(m[1], m[3]), endTime: to24(m[2], m[3]) };
+  const toHHMM = (totalMin: number) =>
+    `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+
+  const rangeIsPM = /pm/i.test(m[3]);
+  const endMin = toMinutes(m[2], rangeIsPM); // the trailing meridiem always describes the end time correctly
+  let startMin = toMinutes(m[1], rangeIsPM);
+
+  // A range like "10.45-12.15 pm" only writes ONE meridiem for the whole slot, but the
+  // start can actually be AM while the end is PM (crossing noon) — e.g. Session 2 really
+  // means 10:45 AM to 12:15 PM, not 10:45 PM. Applying "pm" to both blindly produces a
+  // backwards range (start > end); when that happens, the start must be the other meridiem.
+  if (startMin > endMin) {
+    startMin = toMinutes(m[1], !rangeIsPM);
+  }
+
+  return { startTime: toHHMM(startMin), endTime: toHHMM(endMin) };
 }
 
 export async function parseTimetableWorkbook(buffer: Buffer): Promise<{

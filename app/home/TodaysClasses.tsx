@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatTime12h } from '@/lib/formatTime';
 
 type SessionRow = {
   id: string;
@@ -76,24 +77,26 @@ export default function TodaysClasses({
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <h2 className="text-base">{dayOffset === 0 ? "Today's classes" : "Tomorrow's classes"}</h2>
-          <button
-            onClick={showToday}
-            disabled={dayOffset === 0}
-            className="w-6.5 h-6.5 rounded-full border border-line disabled:opacity-30 text-sm"
-            aria-label="Back to today"
-          >
-            ‹
-          </button>
-          <button
-            onClick={showTomorrow}
-            disabled={dayOffset === 1}
-            className="w-6.5 h-6.5 rounded-full border border-line disabled:opacity-30 text-sm"
-            aria-label="Show tomorrow's classes"
-          >
-            ›
-          </button>
+          <div className="flex items-center gap-1.5 ml-1">
+            <button
+              onClick={showToday}
+              disabled={dayOffset === 0}
+              className="w-9 h-9 rounded-full border border-line text-inkSoft text-base flex items-center justify-center transition hover:bg-brand-50 hover:border-brand-700 hover:text-brand-900 disabled:opacity-25 disabled:pointer-events-none"
+              aria-label="Back to today"
+            >
+              ‹
+            </button>
+            <button
+              onClick={showTomorrow}
+              disabled={dayOffset === 1}
+              className="w-9 h-9 rounded-full border border-line text-inkSoft text-base flex items-center justify-center transition hover:bg-brand-50 hover:border-brand-700 hover:text-brand-900 disabled:opacity-25 disabled:pointer-events-none"
+              aria-label="Show tomorrow's classes"
+            >
+              ›
+            </button>
+          </div>
         </div>
         <span className="text-xs text-inkFaint">
           {label}
@@ -121,8 +124,8 @@ export default function TodaysClasses({
           const preread = s.prereads?.[0];
           return (
             <div key={s.id} className="flex gap-4 py-3 border-b border-line last:border-0">
-              <div className="font-mono text-xs text-brand-700 w-20 shrink-0 pt-0.5">
-                {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
+              <div className="font-mono text-xs text-brand-700 w-24 shrink-0 pt-0.5">
+                {formatTime12h(s.start_time)} – {formatTime12h(s.end_time)}
               </div>
               <div className="flex-1">
                 <b>{s.subjects?.name}</b>

@@ -1,23 +1,45 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { formatTime12h } from '@/lib/formatTime';
 
 type SessionRow = {
   id: string;
   session_date: string;
   start_time: string;
+  room: string | null;
   subjects: { name: string } | null;
 };
 type EventRow = { id: string; event_date: string; type: string; label: string };
 
+// One color per real subject code, evenly spread in hue (consistent saturation/lightness
+// for a cohesive feel) and anchored near the brand's crimson hue so the family reads as
+// related to the site's own palette rather than a generic rainbow.
 const SUBJECT_COLORS: Record<string, string> = {
-  'Corporate Valuation': '#3B6FE0',
-  'Management Consulting': '#1E9E5A',
-  'Game Theory & Applications': '#B5872F',
-  'Financial Modelling': '#8355D6',
-  'Operations Research': '#D6416F',
-  'Business Ethics': '#1D9AA6'
+  'B2B M': '#C52B4C',
+  'BM': '#C5342B',
+  'CB': '#C55E2B',
+  'CV': '#C5872B',
+  'DSDT': '#C5B12B',
+  'FD': '#AEC52B',
+  'FSA': '#84C52B',
+  'HRM(IR)': '#5AC52B',
+  'INV': '#30C52B',
+  'MG': '#2BC550',
+  'MoB': '#2BC579',
+  'MSAIC': '#2BC5A3',
+  'PA': '#2BBCC5',
+  'PCG': '#2B92C5',
+  'PEVC': '#2B68C5',
+  'PM': '#2B3EC5',
+  'PSM': '#422BC5',
+  'Rev Mgmt': '#6C2BC5',
+  'SCM': '#952BC5',
+  'SDM': '#BF2BC5',
+  'SRC': '#C52BA0',
+  'TS-ADR': '#C52B76'
 };
+const FALLBACK_COLOR = '#8A8A8A';
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function monthsBetween(start: string, end: string) {
@@ -59,10 +81,14 @@ export default function MonthView({
   const monthLabel = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const eventsByDate = useMemo(() => {
-    const map: Record<string, { time?: string; label: string; flag?: string }[]> = {};
+    const map: Record<string, { time?: string; label: string; flag?: string; room?: string | null }[]> = {};
     sessions.forEach((s) => {
       const key = s.session_date;
-      (map[key] ??= []).push({ time: s.start_time.slice(0, 5), label: s.subjects?.name ?? 'Session' });
+      (map[key] ??= []).push({
+        time: formatTime12h(s.start_time),
+        label: s.subjects?.name ?? 'Session',
+        room: s.room
+      });
     });
     importantEvents.forEach((e) => {
       const key = e.event_date;
@@ -93,11 +119,14 @@ export default function MonthView({
     const dateKey = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     cells.push({ day: d, faint: false, dateKey });
   }
+  // Trailing filler cells (next month's leading days) — must restart from 1, not
+  // continue the running cell count (that was the bug producing "34" etc. after month end).
+  let trailingDay = 1;
   while (cells.length % 7 !== 0) {
-    cells.push({ day: cells.length, faint: true, dateKey: '' });
+    cells.push({ day: trailingDay++, faint: true, dateKey: '' });
   }
 
-  const isToday = (dateKey: string) => dateKey === today.toISOString().slice(0, 10);
+  const isToday = (dateKey: string) => dateKey === today.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const uniqueSubjects = Array.from(new Set(sessions.map((s) => s.subjects?.name).filter(Boolean))) as string[];
 
   return (
@@ -107,11 +136,11 @@ export default function MonthView({
           <h2 className="text-base">
             {monthLabel} <span className="text-inkFaint text-xs font-medium">{termLabel}</span>
           </h2>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setViewIndex((i) => Math.max(0, i - 1))}
               disabled={viewIndex === 0}
-              className="w-6.5 h-6.5 rounded-full border border-line disabled:opacity-30 text-sm"
+              className="w-9 h-9 rounded-full border border-line text-inkSoft text-base flex items-center justify-center transition hover:bg-brand-50 hover:border-brand-700 hover:text-brand-900 disabled:opacity-25 disabled:pointer-events-none"
               aria-label="Previous month"
             >
               ‹
@@ -122,7 +151,7 @@ export default function MonthView({
             <button
               onClick={() => setViewIndex((i) => Math.min(months.length - 1, i + 1))}
               disabled={viewIndex === months.length - 1}
-              className="w-6.5 h-6.5 rounded-full border border-line disabled:opacity-30 text-sm"
+              className="w-9 h-9 rounded-full border border-line text-inkSoft text-base flex items-center justify-center transition hover:bg-brand-50 hover:border-brand-700 hover:text-brand-900 disabled:opacity-25 disabled:pointer-events-none"
               aria-label="Next month"
             >
               ›
@@ -133,7 +162,10 @@ export default function MonthView({
           <div className="flex gap-3 flex-wrap text-xs text-inkSoft">
             {uniqueSubjects.map((name) => (
               <span key={name} className="inline-flex items-center gap-1.5">
-                <i className="w-2 h-2 rounded-full inline-block" style={{ background: SUBJECT_COLORS[name] ?? '#888' }} />
+                <i
+                  className="w-2 h-2 rounded-full inline-block"
+                  style={{ background: SUBJECT_COLORS[name] ?? FALLBACK_COLOR }}
+                />
                 {name}
               </span>
             ))}
@@ -187,8 +219,9 @@ export default function MonthView({
                 ) : (
                   <div
                     key={idx}
+                    title={e.room ? `Room ${e.room}` : undefined}
                     className="text-[10.5px] mt-0.5 px-1.5 py-0.5 rounded text-white truncate"
-                    style={{ background: SUBJECT_COLORS[e.label] ?? '#888' }}
+                    style={{ background: SUBJECT_COLORS[e.label] ?? FALLBACK_COLOR }}
                   >
                     {e.time} {e.label}
                   </div>
@@ -219,7 +252,7 @@ function DayOverlay({
   onClose
 }: {
   dateKey: string;
-  events: { time?: string; label: string; flag?: string }[];
+  events: { time?: string; label: string; flag?: string; room?: string | null }[];
   onClose: () => void;
 }) {
   const label = new Date(dateKey).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -237,9 +270,13 @@ function DayOverlay({
               </div>
             ) : (
               <div key={i} className="flex items-center gap-2.5 border border-line rounded-lg px-3 py-2 text-sm">
-                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: SUBJECT_COLORS[e.label] ?? '#888' }} />
-                <span className="font-mono text-xs text-inkFaint w-12">{e.time}</span>
-                <span>{e.label}</span>
+                <span
+                  className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                  style={{ background: SUBJECT_COLORS[e.label] ?? FALLBACK_COLOR }}
+                />
+                <span className="font-mono text-xs text-inkFaint w-16 shrink-0">{e.time}</span>
+                <span className="flex-1">{e.label}</span>
+                {e.room && <span className="text-xs text-inkFaint shrink-0">Room {e.room}</span>}
               </div>
             )
           )}
