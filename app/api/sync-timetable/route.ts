@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
 import { parseTimetableWorkbook, normalizeCode } from "@/lib/parseTimetable";
+import { extractEventsFromUnmapped } from "@/lib/parseEvents";
 
 // Protects this endpoint from being hit by anyone but Vercel Cron / you manually.
 // Vercel Cron sends this header automatically; for manual testing, pass ?secret=... instead.
@@ -120,13 +121,53 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to insert new sessions", detail: insertErr.message }, { status: 500 });
   }
 
+  // 5) Classify whatever didn't match a session pattern: quizzes, exams, tutorials, guest
+  //    sessions, registration all get pulled out here; anything left over genuinely isn't
+  //    an event (e.g. the MG joint-period notation) and stays in the final unmapped list.
+  const { events, stillUnmapped } = extractEventsFromUnmapped(unmapped);
+
+  const eventRowsToInsert: Array<{
+    term: string;
+    event_date: string;
+    type: "quiz" | "endterm" | "other";
+    label: string;
+    subject_id: string | null;
+  }> = events.map((e) => ({
+    term: TERM,
+    event_date: e.eventDate,
+    type: e.type,
+    label: e.label,
+    // Reuses the same subject map already built for sessions above — no extra query needed.
+    // Null is fine here (e.g. "Registration" has no subject); the column allows it.
+    subject_id: e.subjectCodeRaw ? subjectByNormCode.get(normalizeCode(e.subjectCodeRaw)) ?? null : null
+  }));
+
+  const { error: deleteEventsErr } = await supabase.from("important_events").delete().eq("term", TERM);
+  if (deleteEventsErr) {
+    return NextResponse.json(
+      { error: "Failed to clear old important_events", detail: deleteEventsErr.message },
+      { status: 500 }
+    );
+  }
+
+  if (eventRowsToInsert.length > 0) {
+    const { error: insertEventsErr } = await supabase.from("important_events").insert(eventRowsToInsert);
+    if (insertEventsErr) {
+      return NextResponse.json(
+        { error: "Failed to insert important_events", detail: insertEventsErr.message },
+        { status: 500 }
+      );
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     inserted: rowsToInsert.length,
     unresolvedSubjectCodes: [...new Set(unresolvedSubjects)],
     skippedStrikethrough: skippedStrikethrough.length,
-    unmapped: unmapped.length,
-    unmappedSample: unmapped.slice(0, 30), // full list would be large; sample + counts for a quick read
+    eventsInserted: eventRowsToInsert.length,
+    unmapped: stillUnmapped.length,
+    unmappedSample: stillUnmapped.slice(0, 30), // full list would be large; sample + counts for a quick read
     syncedAt: new Date().toISOString(),
   });
 }
