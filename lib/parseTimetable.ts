@@ -150,7 +150,7 @@ function extractSessionsFromChunk(
   return { matches, leftover };
 }
 
-const NO_CLASS_MARKERS = new Set(["---", "<=>", "", "--"]);
+const NO_CLASS_MARKERS = new Set(["---", "<=>", "", "--", "End-Term Exams"]);
 
 // A quiz announcement glued directly onto a real class with no separator, e.g.
 // "FSA Quiz (2:30pm-2:50pm)   PSM (B) - S9 (CR-9C-21)". Stripped BEFORE session-matching
@@ -333,6 +333,24 @@ export async function parseTimetableWorkbook(buffer: Buffer): Promise<{
 
       for (const entryText of splitCellEntries(cellText)) {
         if (NO_CLASS_MARKERS.has(entryText)) continue;
+
+        // "Independence Day" gets split across two non-adjacent cells in the same row
+        // (e.g. "Independence" in the Session 1 column, "Day" in the Session 5 column) —
+        // an artifact of how the sheet lays out that one holiday row. Recognized by exact
+        // match only (narrow, so it can't accidentally catch anything else): the
+        // "Independence" half becomes the actual holiday event; the "Day" half is known
+        // redundant and silently dropped rather than logged as unmapped noise.
+        const normalizedEntry = entryText.trim().toLowerCase();
+        if (normalizedEntry === "independence") {
+          unmapped.push({
+            sessionDate,
+            slotLabel: slot.label,
+            rawText: "Independence Day",
+            reason: "Did not match the standard '{code} (section) - Sn (room)' pattern — likely an exam/quiz/tutorial/one-off. Route manually to important_events or review.",
+          });
+          continue;
+        }
+        if (normalizedEntry === "day") continue; // redundant half of the same holiday, see above
 
         // Strip a quiz glued directly onto the front of a real class (no separator) BEFORE
         // attempting session-matching, so the quiz text can't get swallowed into the class's

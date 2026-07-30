@@ -16,7 +16,7 @@ const KEYWORD_RE = /(Quiz|Mid\s*Term\s*Exam|End\s*Term\s*Exam)/gi;
 const ARROW_EXAM_RE = /([A-Za-z0-9:&.()\s]+?)\s*=>\s*(\d{1,2}[.:]\d{2}\s*[ap]m)/gi;
 
 // Other recognized one-off event types that don't have a Quiz/Exam keyword
-const OTHER_EVENT_RE = /(Registration|Tutorial\s*\d*|Guest\s*Session|Additional\s*Session)/i;
+const OTHER_EVENT_RE = /(Registration|Tutorial\s*\d*|Guest\s*Session|Additional\s*Session|Independence\s*Day)/i;
 
 function classifyType(keyword: string): "quiz" | "endterm" | "other" {
   const k = keyword.toLowerCase();
