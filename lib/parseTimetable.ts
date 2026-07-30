@@ -179,6 +179,19 @@ export function normalizeCode(code: string): string {
 }
 
 /** Splits a cell's text into individual class entries (cells can hold several "/"-separated concurrent classes). */
+/** Fixes an inverted "Guest Session" phrasing where the marker sits in parens BEFORE the
+ * real room, and the real room itself has no parens at all — e.g. "SCM (A) & (B) - S19
+ * (Guest Session) Audi". Rewrites it to "...S19 (Auditorium)" so the normal session
+ * patterns can correctly find the real room. Does NOT touch the other, already-working
+ * "Guest Session" phrasing where it's bare text before a properly parenthesized room
+ * (e.g. "...S13 Guest Session (Auditorium)") — only the inverted case matches this. */
+function fixGuestSessionInversion(chunk: string): string {
+  return chunk.replace(/\(Guest Session\)\s*(\S+)/gi, (_full, room: string) => {
+    const normalized = room.toLowerCase() === "audi" ? "Auditorium" : room;
+    return `(${normalized})`;
+  });
+}
+
 /** Splits a cell's text on '/' — the sheet's one intentional separator between concurrent
  * classes. Newlines are deliberately NOT split on here (see extractSessionsFromChunk for why)
  * — they're normalized to spaces instead, since they're often just a soft line-wrap. */
@@ -331,7 +344,7 @@ export async function parseTimetableWorkbook(buffer: Buffer): Promise<{
         cellText = rawCellText;
       }
 
-      for (const entryText of splitCellEntries(cellText)) {
+      for (const entryText of splitCellEntries(fixGuestSessionInversion(cellText))) {
         if (NO_CLASS_MARKERS.has(entryText)) continue;
 
         // "Independence Day" gets split across two non-adjacent cells in the same row
