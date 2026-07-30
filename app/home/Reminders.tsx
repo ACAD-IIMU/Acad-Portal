@@ -5,14 +5,16 @@ type EventRow = {
   label: string;
 };
 
-export default function Reminders({ events }: { events: EventRow[] }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+export default function Reminders({ events, todayDate }: { events: EventRow[]; todayDate: string }) {
+  // Anchored to the same IST midnight page.tsx already computed — not a fresh `new Date()`
+  // here, which would use the server's runtime timezone (UTC on Vercel) and could land on
+  // the wrong calendar day relative to IST, same class of bug fixed elsewhere in this project.
+  const todayMs = new Date(`${todayDate}T00:00:00+05:30`).getTime();
 
   const upcoming = events
     .map((e) => {
-      const d = new Date(e.event_date);
-      const daysAway = Math.round((d.getTime() - today.getTime()) / 86400000);
+      const d = new Date(`${e.event_date}T00:00:00+05:30`);
+      const daysAway = Math.round((d.getTime() - todayMs) / 86400000);
       return { ...e, daysAway };
     })
     .filter((e) => e.daysAway >= 0 && e.daysAway <= 10)

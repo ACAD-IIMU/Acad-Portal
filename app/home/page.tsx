@@ -101,7 +101,7 @@ export default async function HomePage() {
         />
         <div className="flex flex-col gap-5">
           <QuickLinks />
-          <Reminders events={upcomingEvents ?? []} />
+          <Reminders events={upcomingEvents ?? []} todayDate={today} />
         </div>
       </div>
 
