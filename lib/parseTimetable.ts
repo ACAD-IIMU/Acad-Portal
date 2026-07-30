@@ -85,6 +85,11 @@ function addMinutes(hhmm: string, minsToAdd: number): string {
   return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
 }
 
+function timeToMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
 function to24(hh: string, mm: string, meridiem: string): string {
   let h = parseInt(hh, 10);
   const isPM = /pm/i.test(meridiem);
@@ -159,6 +164,11 @@ const NO_CLASS_MARKERS = new Set(["---", "<=>", "", "--", "End-Term Exams"]);
 // (parseEvents.ts) picks it up and turns it into a proper quiz event on its own.
 const LEADING_QUIZ_RE =
   /^([A-Za-z0-9:&.()]+(?:\s[A-Za-z0-9:&.()]+)*?\s+Quiz)\s*(\(\d{1,2}[.:]\d{2}\s*[ap]m(?:\s*-\s*\d{1,2}[.:]\d{2}\s*[ap]m)?\))\s+(\S.*)$/i;
+
+// A bare trailing time note after an otherwise-complete class, e.g. "FSA (A) - S5
+// (CR-8B-18)  08:30 AM" — means THIS instance actually starts earlier/later than the
+// normal slot time. Applied as an override to whichever match immediately precedes it.
+const BARE_TIME_RE = /^(\d{1,2})[.:](\d{2})\s*([ap]m)$/i;
 
 const MONTH_NAMES: Record<string, number> = {
   jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
@@ -384,6 +394,25 @@ export async function parseTimetableWorkbook(buffer: Buffer): Promise<{
         }
 
         const { matches, leftover } = extractSessionsFromChunk(textForSessionMatching, singlePeriodMinutes);
+
+        // A bare trailing time (e.g. "08:30 AM" left over after a real class matched)
+        // means that specific class actually starts at a different time than the normal
+        // slot — apply it as an override to the match it trails, preserving the slot's
+        // normal duration (shift both start and end by the same amount), then remove it
+        // from `leftover` so it isn't also reported as an unmapped fragment.
+        const bareTimeIdx = leftover.findIndex((l) => BARE_TIME_RE.test(l));
+        if (bareTimeIdx !== -1 && matches.length > 0) {
+          const bt = leftover[bareTimeIdx].match(BARE_TIME_RE)!;
+          const overrideStart = to24(bt[1], bt[2], bt[3]);
+          const deltaMin = timeToMinutes(overrideStart) - timeToMinutes(slot.startTime);
+          const lastMatch = matches[matches.length - 1];
+          if (lastMatch.overrideStartTime === undefined) {
+            // don't clobber a genuine double-period override from Stage 0
+            lastMatch.overrideStartTime = overrideStart;
+            lastMatch.overrideEndTime = addMinutes(slot.endTime, deltaMin);
+          }
+          leftover.splice(bareTimeIdx, 1);
+        }
 
         for (const match of matches) {
           sessions.push({
