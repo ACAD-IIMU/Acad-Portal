@@ -40,11 +40,19 @@ const SESSION_RE_GLOBAL =
 const JOINT_SECTION_RE =
   /(.*?)\s*\(([A-Z])\)\s*&\s*\(([A-Z])\)\s*-\s*S(\d+)(?:\(DB\))?\s*\(([^)]+)\)/g;
 
+// Double-period override: e.g. "MG (A) - S9 & S10 (Session will start from 8.00 am) (EH-1)"
+// — two consecutive session-numbers combined into one physical block starting earlier than
+// the normal slot time. Produces ONE session with its own start/end time, not the column's.
+const DOUBLE_PERIOD_RE =
+  /(.*?)\s*(?:\(([A-Z])\))?\s*-\s*S(\d+)\s*&\s*S(\d+)\s*\(Session will start from\s*(\d{1,2})[.:](\d{2})\s*([ap]m)\)\s*\(([^)]+)\)/gi;
+
 interface RawMatch {
   rawCode: string;
   section: string | null;
   sessionNumber: number;
   room: string;
+  overrideStartTime?: string;
+  overrideEndTime?: string;
 }
 
 function scanWithGlobalRegex(
@@ -69,23 +77,64 @@ function scanWithGlobalRegex(
   return { matches, leftover };
 }
 
-function extractSessionsFromChunk(chunk: string): { matches: RawMatch[]; leftover: string[] } {
-  // Stage 1: joint-section pattern first, since it's a strict superset shape of the normal
-  // one and would otherwise get mis-consumed by the single-section scan (the "&" and second
-  // section would just get swallowed into a garbled rawCode instead of recognized as intentional).
-  const stage1 = scanWithGlobalRegex(chunk, JOINT_SECTION_RE, (m) => {
-    const [, rawCode, sec1, sec2, snStr, room] = m;
-    const sessionNumber = parseInt(snStr, 10);
+function addMinutes(hhmm: string, minsToAdd: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = h * 60 + m + minsToAdd;
+  const nh = Math.floor(total / 60) % 24;
+  const nm = total % 60;
+  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+}
+
+function to24(hh: string, mm: string, meridiem: string): string {
+  let h = parseInt(hh, 10);
+  const isPM = /pm/i.test(meridiem);
+  if (isPM && h !== 12) h += 12;
+  if (!isPM && h === 12) h = 0;
+  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function extractSessionsFromChunk(
+  chunk: string,
+  singlePeriodMinutes: number
+): { matches: RawMatch[]; leftover: string[] } {
+  // Stage 0: double-period override, e.g. "MG (A) - S9 & S10 (Session will start from
+  // 8.00 am) (EH-1)". Tried first since its shape (two session numbers + an explicit
+  // start-time override) doesn't fit the normal or joint-section patterns at all.
+  const stage0 = scanWithGlobalRegex(chunk, DOUBLE_PERIOD_RE, (m) => {
+    const [, rawCode, section, sn1, , hh, mm, meridiem, room] = m;
+    const overrideStartTime = to24(hh, mm, meridiem);
+    const overrideEndTime = addMinutes(overrideStartTime, singlePeriodMinutes * 2);
     return [
-      { rawCode: rawCode.trim(), section: sec1, sessionNumber, room: room.trim() },
-      { rawCode: rawCode.trim(), section: sec2, sessionNumber, room: room.trim() },
+      {
+        rawCode: rawCode.trim(),
+        section: section ?? null,
+        sessionNumber: parseInt(sn1, 10),
+        room: room.trim(),
+        overrideStartTime,
+        overrideEndTime,
+      },
     ];
   });
 
+  // Stage 1: joint-section pattern, run on whatever stage 0 didn't claim.
+  const matches = [...stage0.matches];
+  const leftoverAfterStage0: string[] = [];
+  for (const piece of stage0.leftover) {
+    const stage1 = scanWithGlobalRegex(piece, JOINT_SECTION_RE, (m) => {
+      const [, rawCode, sec1, sec2, snStr, room] = m;
+      const sessionNumber = parseInt(snStr, 10);
+      return [
+        { rawCode: rawCode.trim(), section: sec1, sessionNumber, room: room.trim() },
+        { rawCode: rawCode.trim(), section: sec2, sessionNumber, room: room.trim() },
+      ];
+    });
+    matches.push(...stage1.matches);
+    leftoverAfterStage0.push(...stage1.leftover);
+  }
+
   // Stage 2: normal single-section pattern, run on whatever stage 1 didn't claim.
-  const matches = [...stage1.matches];
   const leftover: string[] = [];
-  for (const piece of stage1.leftover) {
+  for (const piece of leftoverAfterStage0) {
     const stage2 = scanWithGlobalRegex(piece, SESSION_RE_GLOBAL, (m) => [
       {
         rawCode: m[1].trim(),
@@ -102,6 +151,14 @@ function extractSessionsFromChunk(chunk: string): { matches: RawMatch[]; leftove
 }
 
 const NO_CLASS_MARKERS = new Set(["---", "<=>", "", "--"]);
+
+// A quiz announcement glued directly onto a real class with no separator, e.g.
+// "FSA Quiz (2:30pm-2:50pm)   PSM (B) - S9 (CR-9C-21)". Stripped BEFORE session-matching
+// so the quiz's own text doesn't get swallowed into the following class's subject code —
+// the stripped fragment is pushed to `unmapped` as-is, where the existing event classifier
+// (parseEvents.ts) picks it up and turns it into a proper quiz event on its own.
+const LEADING_QUIZ_RE =
+  /^([A-Za-z0-9:&.()]+(?:\s[A-Za-z0-9:&.()]+)*?\s+Quiz)\s*(\(\d{1,2}[.:]\d{2}\s*[ap]m(?:\s*-\s*\d{1,2}[.:]\d{2}\s*[ap]m)?\))\s+(\S.*)$/i;
 
 const MONTH_NAMES: Record<string, number> = {
   jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
@@ -187,6 +244,12 @@ export async function parseTimetableWorkbook(buffer: Buffer): Promise<{
     });
   }
 
+  // Actual Session 1 duration, derived from the header rather than hardcoded — used to
+  // compute the double-period override's end time (two periods back-to-back).
+  const singlePeriodMinutes =
+    (parseInt(slots[0].endTime.split(":")[0], 10) * 60 + parseInt(slots[0].endTime.split(":")[1], 10)) -
+    (parseInt(slots[0].startTime.split(":")[0], 10) * 60 + parseInt(slots[0].startTime.split(":")[1], 10));
+
   const sessions: ParsedSession[] = [];
   const unmapped: UnmappedEntry[] = [];
   const skippedStrikethrough: UnmappedEntry[] = [];
@@ -271,7 +334,25 @@ export async function parseTimetableWorkbook(buffer: Buffer): Promise<{
       for (const entryText of splitCellEntries(cellText)) {
         if (NO_CLASS_MARKERS.has(entryText)) continue;
 
-        const { matches, leftover } = extractSessionsFromChunk(entryText);
+        // Strip a quiz glued directly onto the front of a real class (no separator) BEFORE
+        // attempting session-matching, so the quiz text can't get swallowed into the class's
+        // subject code. The stripped fragment goes to `unmapped` verbatim — the existing
+        // event classifier (parseEvents.ts) already knows how to turn "{code} Quiz (time)"
+        // into a proper quiz event on its own, no need to duplicate that logic here.
+        let textForSessionMatching = entryText;
+        const leadingQuizMatch = entryText.match(LEADING_QUIZ_RE);
+        if (leadingQuizMatch) {
+          const [, quizCode, quizTime, remainder] = leadingQuizMatch;
+          unmapped.push({
+            sessionDate,
+            slotLabel: slot.label,
+            rawText: `${quizCode.trim()} ${quizTime}`,
+            reason: "Did not match the standard '{code} (section) - Sn (room)' pattern — likely an exam/quiz/tutorial/one-off. Route manually to important_events or review.",
+          });
+          textForSessionMatching = remainder.trim();
+        }
+
+        const { matches, leftover } = extractSessionsFromChunk(textForSessionMatching, singlePeriodMinutes);
 
         for (const match of matches) {
           sessions.push({
@@ -281,8 +362,8 @@ export async function parseTimetableWorkbook(buffer: Buffer): Promise<{
             sessionNumber: match.sessionNumber,
             room: match.room,
             sessionDate,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
+            startTime: match.overrideStartTime ?? slot.startTime,
+            endTime: match.overrideEndTime ?? slot.endTime,
           });
         }
 
