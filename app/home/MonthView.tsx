@@ -75,7 +75,6 @@ export default function MonthView({
   );
   const [viewIndex, setViewIndex] = useState(defaultIndex === -1 ? 0 : defaultIndex);
   const [openDay, setOpenDay] = useState<string | null>(null); // 'YYYY-MM-DD'
-  const [calState, setCalState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   const { y, m } = months[viewIndex];
   const monthLabel = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -96,17 +95,6 @@ export default function MonthView({
     });
     return map;
   }, [sessions, importantEvents]);
-
-  async function addToCalendar() {
-    setCalState('loading');
-    try {
-      const res = await fetch('/api/calendar/push', { method: 'POST' });
-      if (!res.ok) throw new Error();
-      setCalState('success');
-    } catch {
-      setCalState('error');
-    }
-  }
 
   const firstDay = new Date(y, m, 1).getDay();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
@@ -158,35 +146,18 @@ export default function MonthView({
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex gap-3 flex-wrap text-xs text-inkSoft">
-            {uniqueSubjects.map((name) => (
-              <span key={name} className="inline-flex items-center gap-1.5">
-                <i
-                  className="w-2 h-2 rounded-full inline-block"
-                  style={{ background: SUBJECT_COLORS[name] ?? FALLBACK_COLOR }}
-                />
-                {name}
-              </span>
-            ))}
-          </div>
-          <button
-            onClick={addToCalendar}
-            disabled={calState === 'loading'}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
-              calState === 'success' ? 'bg-brand-800' : 'bg-brand-900 hover:bg-brand-800'
-            }`}
-          >
-            {calState === 'loading' ? 'Adding to calendar…' : calState === 'success' ? '✓ Added to your calendar' : '📅 Add to Google Calendar'}
-          </button>
+        <div className="flex gap-3 flex-wrap text-xs text-inkSoft">
+          {uniqueSubjects.map((name) => (
+            <span key={name} className="inline-flex items-center gap-1.5">
+              <i
+                className="w-2 h-2 rounded-full inline-block"
+                style={{ background: SUBJECT_COLORS[name] ?? FALLBACK_COLOR }}
+              />
+              {name}
+            </span>
+          ))}
         </div>
       </div>
-
-      {calState === 'error' && (
-        <p className="text-danger text-xs mb-3">
-          Couldn&apos;t reach Google Calendar just now — try again in a moment.
-        </p>
-      )}
 
       <div className="grid grid-cols-7 gap-px bg-line border border-line rounded-lg overflow-hidden">
         {DOW.map((d) => (
