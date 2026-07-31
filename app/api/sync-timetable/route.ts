@@ -86,6 +86,7 @@ export async function GET(req: Request) {
     subject_id: string;
     term: string;
     section_id: string | null;
+    session_number: number;
     session_date: string;
     start_time: string;
     end_time: string;
@@ -107,6 +108,7 @@ export async function GET(req: Request) {
       subject_id: subjectId,
       term: TERM,
       section_id: sectionId,
+      session_number: s.sessionNumber,
       session_date: s.sessionDate,
       start_time: s.startTime,
       end_time: s.endTime,
@@ -114,17 +116,20 @@ export async function GET(req: Request) {
     });
   }
 
-  // 4) Full-replace strategy: the sheet is the source of truth, sessions is a read cache of it.
-  //    Simpler and safer than trying to diff/merge given reschedules already observed in this data.
-  const { error: deleteErr } = await supabase.from("sessions").delete().eq("term", TERM);
-  if (deleteErr) {
-    return NextResponse.json({ error: "Failed to clear old sessions", detail: deleteErr.message }, { status: 500 });
+  // 4) Atomic upsert: matches each row against its stable natural key (subject, section,
+  //    term, session_number) — updates in place if that class already existed (keeping its
+  //    id stable, so anything attached to it like a future preread stays attached), inserts
+  //    if genuinely new, and removes anything no longer present in this sync's data. All in
+  //    one Postgres function call, so a failure partway through can't leave sessions half-
+  //    deleted the way the old separate delete-then-insert calls could.
+  const { data: syncResult, error: syncErr } = await supabase.rpc("sync_sessions_for_term", {
+    target_term: TERM,
+    rows: rowsToInsert,
+  });
+  if (syncErr) {
+    return NextResponse.json({ error: "Failed to sync sessions", detail: syncErr.message }, { status: 500 });
   }
-
-  const { error: insertErr } = await supabase.from("sessions").insert(rowsToInsert);
-  if (insertErr) {
-    return NextResponse.json({ error: "Failed to insert new sessions", detail: insertErr.message }, { status: 500 });
-  }
+  const { upserted_count: upsertedCount, deleted_count: deletedCount } = syncResult[0];
 
   // 5) Classify whatever didn't match a session pattern: quizzes, exams, tutorials, guest
   //    sessions, registration all get pulled out here; anything left over genuinely isn't
@@ -173,7 +178,9 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ok: true,
-    inserted: rowsToInsert.length,
+    sessionsProcessed: rowsToInsert.length,
+    sessionsUpsertedOrUnchanged: upsertedCount,
+    sessionsRemoved: deletedCount,
     unresolvedSubjectCodes: [...new Set(unresolvedSubjects)],
     skippedStrikethrough: skippedStrikethrough.length,
     eventsInserted: eventRowsToInsert.length,
