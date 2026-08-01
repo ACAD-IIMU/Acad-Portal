@@ -14,6 +14,8 @@ type SessionRow = {
   prereads: { required: boolean; drive_file_id: string | null }[] | null;
 };
 
+const MAX_OFFSET = 2; // 0 = today, 1 = tomorrow, 2 = day after tomorrow ("T+2")
+
 function dateKeyOf(d: Date) {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
 }
@@ -24,6 +26,16 @@ function labelOf(d: Date) {
     month: 'short',
     timeZone: 'Asia/Kolkata'
   });
+}
+function headingFor(offset: number) {
+  if (offset === 0) return "Today's classes";
+  if (offset === 1) return "Tomorrow's classes";
+  return 'T+2';
+}
+function emptyMessageFor(offset: number) {
+  if (offset === 0) return 'No classes scheduled today.';
+  if (offset === 1) return 'No classes scheduled tomorrow.';
+  return 'No classes scheduled that day.';
 }
 
 export default function TodaysClasses({
@@ -37,62 +49,62 @@ export default function TodaysClasses({
   todayLabel: string;
   todayDate: string; // YYYY-MM-DD, IST — from page.tsx, same instant used for the DB query
 }) {
-  const [dayOffset, setDayOffset] = useState<0 | 1>(0); // 0 = today, 1 = tomorrow
-  const [tomorrowSessions, setTomorrowSessions] = useState<SessionRow[] | null>(null);
+  const [dayOffset, setDayOffset] = useState(0); // 0, 1, or 2
+  // Cache for offsets 1 and 2 only — offset 0 always comes straight from the todaySessions prop.
+  const [cache, setCache] = useState<Record<number, SessionRow[] | null>>({ 1: null, 2: null });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
-  // Tomorrow, computed off the same IST instant page.tsx already anchored "today" to —
-  // not a fresh `new Date()` here, so this can't drift a day off from what the server used.
-  const tomorrowDateObj = new Date(`${todayDate}T00:00:00+05:30`);
-  tomorrowDateObj.setDate(tomorrowDateObj.getDate() + 1);
-  const tomorrowDateKey = dateKeyOf(tomorrowDateObj);
-  const tomorrowLabel = labelOf(tomorrowDateObj);
+  // Every future offset computed off the same IST instant page.tsx already anchored "today"
+  // to — never a fresh `new Date()` here, so this can't drift a day off from what the server used.
+  function dateForOffset(offset: number): Date {
+    const d = new Date(`${todayDate}T00:00:00+05:30`);
+    d.setDate(d.getDate() + offset);
+    return d;
+  }
 
-  const sessions = dayOffset === 0 ? todaySessions : tomorrowSessions ?? [];
-  const label = dayOffset === 0 ? todayLabel : tomorrowLabel;
+  const sessions = dayOffset === 0 ? todaySessions : cache[dayOffset] ?? [];
+  const label = dayOffset === 0 ? todayLabel : labelOf(dateForOffset(dayOffset));
 
-  async function showTomorrow() {
-    setDayOffset(1);
-    if (tomorrowSessions !== null) return; // already fetched once this visit — don't refetch
+  async function goToOffset(offset: number) {
+    if (offset < 0 || offset > MAX_OFFSET) return;
+    setDayOffset(offset);
+    if (offset === 0 || cache[offset] !== null && cache[offset] !== undefined) return; // already have it
     setLoading(true);
     setLoadError(false);
     try {
-      const res = await fetch(`/api/sessions/by-date?date=${tomorrowDateKey}`);
+      const dateKey = dateKeyOf(dateForOffset(offset));
+      const res = await fetch(`/api/sessions/by-date?date=${dateKey}`);
       if (!res.ok) throw new Error('Request failed');
       const data = await res.json();
-      setTomorrowSessions(data.sessions ?? []);
+      setCache((prev) => ({ ...prev, [offset]: data.sessions ?? [] }));
     } catch {
       setLoadError(true);
-      setTomorrowSessions([]);
+      setCache((prev) => ({ ...prev, [offset]: [] }));
     } finally {
       setLoading(false);
     }
-  }
-
-  function showToday() {
-    setDayOffset(0);
   }
 
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-base">{dayOffset === 0 ? "Today's classes" : "Tomorrow's classes"}</h2>
+          <h2 className="text-base">{headingFor(dayOffset)}</h2>
           <div className="flex items-center gap-1.5 ml-1">
             <button
-              onClick={showToday}
+              onClick={() => goToOffset(dayOffset - 1)}
               disabled={dayOffset === 0}
               className="w-9 h-9 rounded-full border border-line text-inkSoft text-base flex items-center justify-center transition hover:bg-brand-50 hover:border-brand-700 hover:text-brand-900 disabled:opacity-25 disabled:pointer-events-none"
-              aria-label="Back to today"
+              aria-label="Previous day"
             >
               ‹
             </button>
             <button
-              onClick={showTomorrow}
-              disabled={dayOffset === 1}
+              onClick={() => goToOffset(dayOffset + 1)}
+              disabled={dayOffset === MAX_OFFSET}
               className="w-9 h-9 rounded-full border border-line text-inkSoft text-base flex items-center justify-center transition hover:bg-brand-50 hover:border-brand-700 hover:text-brand-900 disabled:opacity-25 disabled:pointer-events-none"
-              aria-label="Show tomorrow's classes"
+              aria-label="Next day"
             >
               ›
             </button>
@@ -104,18 +116,16 @@ export default function TodaysClasses({
         </span>
       </div>
 
-      {loading && <p className="text-sm text-inkFaint italic">Loading tomorrow&apos;s classes…</p>}
+      {loading && <p className="text-sm text-inkFaint italic">Loading classes…</p>}
 
       {!loading && loadError && (
         <p className="text-sm text-danger italic">
-          Couldn&apos;t load tomorrow&apos;s classes just now — try again in a moment.
+          Couldn&apos;t load that day&apos;s classes just now — try again in a moment.
         </p>
       )}
 
       {!loading && !loadError && sessions.length === 0 && (
-        <p className="text-sm text-inkFaint italic">
-          {dayOffset === 0 ? 'No classes scheduled today.' : 'No classes scheduled tomorrow.'}
-        </p>
+        <p className="text-sm text-inkFaint italic">{emptyMessageFor(dayOffset)}</p>
       )}
 
       {!loading &&
