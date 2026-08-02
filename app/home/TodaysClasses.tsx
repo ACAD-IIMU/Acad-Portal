@@ -3,15 +3,17 @@
 import { useState } from 'react';
 import { formatTime12h } from '@/lib/formatTime';
 
+type Preread = { id: string; file_name: string; drive_file_id: string };
 type SessionRow = {
   id: string;
   start_time: string;
   end_time: string;
   faculty_name: string | null;
   room: string | null;
+  no_preread: boolean;
   subjects: { name: string } | null;
   sections: { section_label: string | null } | null;
-  prereads: { required: boolean; drive_file_id: string | null }[] | null;
+  prereads: Preread[] | null;
 };
 
 const MAX_OFFSET = 2; // 0 = today, 1 = tomorrow, 2 = day after tomorrow ("T+2")
@@ -131,7 +133,6 @@ export default function TodaysClasses({
       {!loading &&
         !loadError &&
         sessions.map((s) => {
-          const preread = s.prereads?.[0];
           return (
             <div key={s.id} className="flex gap-4 py-3 border-b border-line last:border-0">
               <div className="font-mono text-xs text-brand-700 w-24 shrink-0 pt-0.5">
@@ -143,7 +144,7 @@ export default function TodaysClasses({
                   {s.faculty_name} · Room {s.room}
                   {s.sections?.section_label ? ` · Sec ${s.sections.section_label}` : ''}
                 </div>
-                <PrereadBadge preread={preread} sessionId={s.id} />
+                <PrereadBadges noPreread={s.no_preread} prereads={s.prereads ?? []} />
               </div>
             </div>
           );
@@ -152,21 +153,15 @@ export default function TodaysClasses({
   );
 }
 
-function PrereadBadge({
-  preread,
-  sessionId
-}: {
-  preread?: { required: boolean; drive_file_id: string | null };
-  sessionId: string;
-}) {
-  if (!preread || !preread.required) {
+function PrereadBadges({ noPreread, prereads }: { noPreread: boolean; prereads: Preread[] }) {
+  if (noPreread && prereads.length === 0) {
     return (
       <div className="mt-1.5 inline-flex text-xs italic text-inkFaint border border-dashed border-line rounded-full px-2.5 py-0.5">
         No preread for this session
       </div>
     );
   }
-  if (!preread.drive_file_id) {
+  if (prereads.length === 0) {
     return (
       <div className="mt-1.5 inline-flex text-xs font-semibold text-danger bg-danger-100 rounded-full px-2.5 py-0.5">
         ⚠ Preread not uploaded by SR
@@ -174,11 +169,16 @@ function PrereadBadge({
     );
   }
   return (
-    <a
-      href={`/api/prereads/${sessionId}`}
-      className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-gold-600 bg-gold-100 rounded-full px-2.5 py-0.5 hover:bg-gold-100/70"
-    >
-      📄 Download preread
-    </a>
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {prereads.map((p) => (
+        <a
+          key={p.id}
+          href={`/api/prereads/download/${p.id}`}
+          className="inline-flex items-center gap-1.5 text-xs text-gold-600 bg-gold-100 rounded-full px-2.5 py-0.5 hover:bg-gold-100/70"
+        >
+          📄 {p.file_name}
+        </a>
+      ))}
+    </div>
   );
 }
