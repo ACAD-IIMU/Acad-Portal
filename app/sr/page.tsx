@@ -15,6 +15,7 @@ type SessionRow = {
   subjects: { name: string } | null;
   sections: { section_label: string | null } | null;
   prereads: Preread[] | null;
+  driveFolderLink: string | null;
 };
 
 function dateLabel(dateStr: string) {
@@ -69,17 +70,9 @@ export default function SrUploadPage() {
       </div>
 
       <div className="card p-4 text-sm text-inkSoft">
-        <b>How this works:</b> upload your file to{' '}
-        <a
-          href="https://drive.google.com/drive/folders/1jssyXnnDN35fZhp18CvgicTUZU3ujlJX"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-brand-900 underline font-semibold"
-        >
-          this shared folder
-        </a>{' '}
-        yourself first (any file type), then come back here, copy its share link from Drive
-        (right-click the file → Share → Copy link), and paste it into the session below.
+        <b>How this works:</b> each session below links to your subject &amp; section's own
+        folder — upload your file there first (any file type), then come back, copy its
+        share link from Drive (right-click the file → Share → Copy link), and paste it in.
       </div>
 
       {sessions.length === 0 && (
@@ -168,6 +161,21 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
           {session.room ? ` · Room ${session.room}` : ''}
         </span>
       </div>
+
+      {session.driveFolderLink ? (
+        <a
+          href={session.driveFolderLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-brand-900 underline font-semibold inline-block mb-2"
+        >
+          📁 Open your {session.subjects?.name} folder
+        </a>
+      ) : (
+        <p className="text-xs italic text-inkFaint mb-2">
+          No folder link set for this subject/section yet — ask ACAD for the correct folder.
+        </p>
+      )}
 
       {hasFiles && (
         <ul className="text-sm mb-2 flex flex-col gap-1">

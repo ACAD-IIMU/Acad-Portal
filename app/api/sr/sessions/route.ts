@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data: assignments } = await supabase
     .from('sr_assignments')
-    .select('subject_id, section_id, term, subjects(name)')
+    .select('subject_id, section_id, term, drive_folder_link, subjects(name)')
     .eq('student_id', student.id);
 
   if (!assignments || assignments.length === 0) {
@@ -37,7 +37,12 @@ export async function GET() {
     query = a.section_id ? query.eq('section_id', a.section_id) : query.is('section_id', null);
 
     const { data: sessions } = await query;
-    if (sessions) allSessions.push(...sessions);
+    if (sessions) {
+      // Each session carries its OWN subject+section's specific folder link — not one
+      // generic link for everyone, matching that an SR is only ever assigned to one
+      // subject+section per term.
+      allSessions.push(...sessions.map((s) => ({ ...s, driveFolderLink: a.drive_folder_link })));
+    }
   }
 
   allSessions.sort((x, y) => x.session_date.localeCompare(y.session_date));
