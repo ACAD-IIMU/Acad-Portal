@@ -95,7 +95,7 @@ export default function LoginPage() {
     <main className="min-h-screen flex items-center justify-center px-4">
       <div className="card w-full max-w-sm p-10 flex flex-col items-center text-center">
         <Image
-          src="/iimu-logo.png"
+          src="/acad-logo.png"
           alt="IIM Udaipur"
           width={56}
           height={56}
