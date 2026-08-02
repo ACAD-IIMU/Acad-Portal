@@ -30,8 +30,15 @@ export async function middleware(request: NextRequest) {
     data: { user }
   } = await supabase.auth.getUser();
 
+  // Public paths: no login required to reach these.
+  // /api/sync-timetable is included because it's called two ways that never
+  // have a logged-in user session — Vercel's own Cron job (authenticates via
+  // a CRON_SECRET header) and manual testing via a ?secret= query param. Both
+  // checks live inside that route itself; middleware must let the request
+  // through to it rather than redirecting to /login first.
   const isPublicPath = request.nextUrl.pathname.startsWith('/login') ||
-    request.nextUrl.pathname.startsWith('/auth');
+    request.nextUrl.pathname.startsWith('/auth') ||
+    request.nextUrl.pathname.startsWith('/api/sync-timetable');
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url));
