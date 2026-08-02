@@ -95,7 +95,7 @@ export default async function HomePage() {
           {isSr && (
             <a
               href="/sr"
-              className="text-xs font-semibold text-brand-900 border border-brand-900 rounded-full px-3 py-1.5 hover:bg-brand-50"
+              className="flex items-center gap-1.5 text-sm font-bold text-white bg-gold-600 rounded-full px-4 py-2 shadow-sm hover:bg-gold-500 transition"
             >
               📄 SR Tools
             </a>
