@@ -24,12 +24,6 @@ export default function Reminders({ events, todayDate }: { events: EventRow[]; t
     <div className="card p-5">
       <h2 className="text-sm mb-3">Reminders</h2>
       <div className="flex flex-col gap-2.5">
-        {/* SR Elections reminder is currently static — wire to a real elections table
-            when the SR Elections screen is built. */}
-        <ReminderItem icon="🗳️">
-          SR Elections for {upcoming.length ? 'this term' : 'the current term'} close soon — cast your vote.
-        </ReminderItem>
-
         {upcoming.length === 0 && (
           <p className="text-xs text-inkFaint italic">No upcoming quizzes or exams on the calendar.</p>
         )}
