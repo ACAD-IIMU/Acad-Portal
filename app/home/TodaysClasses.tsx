@@ -17,7 +17,7 @@ type SessionRow = {
   prereads: Preread[] | null;
 };
 
-const MAX_OFFSET = 2; // 0 = today, 1 = tomorrow, 2 = day after tomorrow ("T+2")
+const MAX_OFFSET = 4; // 0 = today, 1 = tomorrow, 2 = day after tmrw, 3 = NErd, 4 = DML
 
 function dateKeyOf(d: Date) {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
@@ -33,7 +33,10 @@ function labelOf(d: Date) {
 function headingFor(offset: number) {
   if (offset === 0) return "Today's classes";
   if (offset === 1) return "Tomorrow's classes";
-  return 'T+2';
+  if (offset === 2) return 'Day after tmrw';
+  if (offset === 3) return 'NErd';
+  if (offset === 4) return 'DML';
+  return '';
 }
 function emptyMessageFor(offset: number) {
   if (offset === 0) return 'No classes scheduled today.';
@@ -52,7 +55,7 @@ export default function TodaysClasses({
   todayLabel: string;
   todayDate: string; // YYYY-MM-DD, IST — from page.tsx, same instant used for the DB query
 }) {
-  const [dayOffset, setDayOffset] = useState(0); // 0, 1, or 2
+  const [dayOffset, setDayOffset] = useState(0); // 0-4: today, tomorrow, day after tmrw, NErd, DML
   // Cache for offsets 1 and 2 only — offset 0 always comes straight from the todaySessions prop.
   const [cache, setCache] = useState<Record<number, SessionRow[] | null>>({ 1: null, 2: null });
   const [loading, setLoading] = useState(false);
@@ -113,10 +116,7 @@ export default function TodaysClasses({
             </button>
           </div>
         </div>
-        <span className="text-xs text-inkFaint">
-          {label}
-          {batchLabel ? ` · ${batchLabel}` : ''}
-        </span>
+        <span className="text-sm font-semibold text-gray-900">{label}</span>
       </div>
 
       {loading && <p className="text-sm text-inkFaint italic">Loading classes…</p>}
@@ -136,7 +136,7 @@ export default function TodaysClasses({
         sessions.map((s) => {
           return (
             <div key={s.id} className="flex gap-4 py-3 border-b border-line last:border-0">
-              <div className="font-mono text-xs text-brand-700 w-24 shrink-0 pt-0.5">
+              <div className="font-mono text-xs text-brand-700 w-32 shrink-0 pt-0.5 whitespace-nowrap">
                 {formatTime12h(s.start_time)} – {formatTime12h(s.end_time)}
               </div>
               <div className="flex-1">

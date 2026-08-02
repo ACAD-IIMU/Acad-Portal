@@ -41,6 +41,12 @@ const SUBJECT_COLORS: Record<string, string> = {
   'TS-ADR': '#C52B76'
 };
 const FALLBACK_COLOR = '#8A8A8A';
+
+function iconForFlag(flag: string) {
+  if (flag === 'endterm') return '🎓';
+  if (flag === 'quiz') return '📝';
+  return '📅'; // 'other' — holidays, registration, tutorials, guest sessions
+}
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function monthsBetween(start: string, end: string) {
@@ -187,7 +193,7 @@ export default function MonthView({
               {events.slice(0, 3).map((e, idx) =>
                 e.flag ? (
                   <div key={idx} className="text-[10.5px] mt-0.5 px-1.5 py-0.5 rounded bg-white border border-gold-500 text-gold-600 font-semibold truncate">
-                    {e.flag === 'endterm' ? '🎓' : '📝'} {e.label}
+                    {iconForFlag(e.flag)} {e.label}
                   </div>
                 ) : (
                   <div
@@ -238,7 +244,7 @@ function DayOverlay({
           {events.map((e, i) =>
             e.flag ? (
               <div key={i} className="flex items-center gap-2.5 border border-gold-500 bg-gold-100 rounded-lg px-3 py-2 text-sm">
-                <span>{e.flag === 'endterm' ? '🎓' : '📝'}</span>
+                <span>{iconForFlag(e.flag!)}</span>
                 <span>{e.label}</span>
               </div>
             ) : (
