@@ -180,8 +180,9 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
       {hasFiles && (
         <ul className="text-sm mb-2 flex flex-col gap-1">
           {session.prereads!.map((p) => (
-            <li key={p.id} className="text-inkSoft">
+            <li key={p.id} className="text-inkSoft flex items-center gap-2">
               📄 {p.file_name}
+              <RemoveButton prereadId={p.id} onRemoved={onChanged} />
             </li>
           ))}
         </ul>
@@ -229,5 +230,40 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
         </div>
       </div>
     </div>
+  );
+}
+
+function RemoveButton({ prereadId, onRemoved }: { prereadId: string; onRemoved: () => void }) {
+  const [removing, setRemoving] = useState(false);
+
+  async function handleRemove() {
+    if (!confirm('Remove this file? This cannot be undone.')) return;
+    setRemoving(true);
+    try {
+      const res = await fetch('/api/prereads/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prereadId })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? 'Failed to remove');
+      }
+      onRemoved();
+    } catch (err: any) {
+      alert(err.message ?? 'Failed to remove');
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={handleRemove}
+      disabled={removing}
+      className="text-xs text-danger hover:underline disabled:opacity-40"
+    >
+      {removing ? 'Removing…' : '✕ Remove'}
+    </button>
   );
 }

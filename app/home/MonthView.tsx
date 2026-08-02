@@ -8,6 +8,7 @@ type SessionRow = {
   session_date: string;
   start_time: string;
   room: string | null;
+  session_number: number;
   subjects: { name: string } | null;
 };
 type EventRow = { id: string; event_date: string; type: string; label: string };
@@ -80,13 +81,14 @@ export default function MonthView({
   const monthLabel = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const eventsByDate = useMemo(() => {
-    const map: Record<string, { time?: string; label: string; flag?: string; room?: string | null }[]> = {};
+    const map: Record<string, { time?: string; label: string; flag?: string; room?: string | null; sessionNumber?: number }[]> = {};
     sessions.forEach((s) => {
       const key = s.session_date;
       (map[key] ??= []).push({
         time: formatTime12h(s.start_time),
         label: s.subjects?.name ?? 'Session',
-        room: s.room
+        room: s.room,
+        sessionNumber: s.session_number
       });
     });
     importantEvents.forEach((e) => {
@@ -194,7 +196,7 @@ export default function MonthView({
                     className="text-[10.5px] mt-0.5 px-1.5 py-0.5 rounded text-white truncate"
                     style={{ background: SUBJECT_COLORS[e.label] ?? FALLBACK_COLOR }}
                   >
-                    {e.time} {e.label}
+                    {e.time} {e.label}{e.sessionNumber ? ` S${e.sessionNumber}` : ''}
                   </div>
                 )
               )}
@@ -223,7 +225,7 @@ function DayOverlay({
   onClose
 }: {
   dateKey: string;
-  events: { time?: string; label: string; flag?: string; room?: string | null }[];
+  events: { time?: string; label: string; flag?: string; room?: string | null; sessionNumber?: number }[];
   onClose: () => void;
 }) {
   const label = new Date(dateKey).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -246,7 +248,10 @@ function DayOverlay({
                   style={{ background: SUBJECT_COLORS[e.label] ?? FALLBACK_COLOR }}
                 />
                 <span className="font-mono text-xs text-inkFaint w-16 shrink-0">{e.time}</span>
-                <span className="flex-1">{e.label}</span>
+                <span className="flex-1">
+                  {e.label}
+                  {e.sessionNumber ? <span className="text-inkFaint"> S{e.sessionNumber}</span> : ''}
+                </span>
                 {e.room && <span className="text-xs text-inkFaint shrink-0">Room {e.room}</span>}
               </div>
             )
