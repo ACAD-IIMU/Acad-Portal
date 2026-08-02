@@ -69,7 +69,8 @@ export default async function HomePage() {
     .select('*, subjects(name), sections(section_label)')
     .gte('session_date', TERM_START)
     .lte('session_date', TERM_END)
-    .order('session_date');
+    .order('session_date')
+    .order('start_time');
 
   const { data: upcomingEvents } = await supabase
     .from('important_events')
