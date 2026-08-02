@@ -33,8 +33,8 @@ function labelOf(d: Date) {
 function headingFor(offset: number) {
   if (offset === 0) return "Today's classes";
   if (offset === 1) return "Tomorrow's classes";
-  if (offset === 2) return 'Day after tmrw';
-  if (offset === 3) return 'NErd';
+  if (offset === 2) return 'Day after Tomorrow';
+  if (offset === 3) return "Nerds' Day";
   if (offset === 4) return 'DML';
   return '';
 }
@@ -96,23 +96,27 @@ export default function TodaysClasses({
     <div className="card p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-base">{headingFor(dayOffset)}</h2>
-          <div className="flex items-center gap-1.5 ml-1">
+          <h2 className="text-base w-48 shrink-0">{headingFor(dayOffset)}</h2>
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => goToOffset(dayOffset - 1)}
               disabled={dayOffset === 0}
-              className="w-9 h-9 rounded-full border border-line text-inkSoft text-base flex items-center justify-center transition hover:bg-brand-50 hover:border-brand-700 hover:text-brand-900 disabled:opacity-25 disabled:pointer-events-none"
+              className="w-9 h-9 rounded-full border-2 border-brand-700 text-brand-900 flex items-center justify-center transition hover:bg-brand-700 hover:text-white disabled:opacity-25 disabled:pointer-events-none"
               aria-label="Previous day"
             >
-              ‹
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
             </button>
             <button
               onClick={() => goToOffset(dayOffset + 1)}
               disabled={dayOffset === MAX_OFFSET}
-              className="w-9 h-9 rounded-full border border-line text-inkSoft text-base flex items-center justify-center transition hover:bg-brand-50 hover:border-brand-700 hover:text-brand-900 disabled:opacity-25 disabled:pointer-events-none"
+              className="w-9 h-9 rounded-full border-2 border-brand-700 text-brand-900 flex items-center justify-center transition hover:bg-brand-700 hover:text-white disabled:opacity-25 disabled:pointer-events-none"
               aria-label="Next day"
             >
-              ›
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
             </button>
           </div>
         </div>
