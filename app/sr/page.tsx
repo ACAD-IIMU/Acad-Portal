@@ -112,7 +112,7 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
         })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Failed to save');
+      if (!res.ok) throw new Error(`${data.error ?? 'Failed to save'}${data.detail ? ' — ' + data.detail : ''}`);
 
       setSuccessMsg(
         data.appliedToNextSession
