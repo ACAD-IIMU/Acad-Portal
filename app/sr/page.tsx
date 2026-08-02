@@ -136,7 +136,8 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
           driveFile = await chunkRes.json(); // final chunk — upload complete
           break;
         }
-        throw new Error(`Upload failed at byte ${start} (status ${chunkRes.status})`);
+        const errBody = await chunkRes.text();
+        throw new Error(`Upload failed at byte ${start} (status ${chunkRes.status}): ${errBody}`);
       }
 
       if (!driveFile) throw new Error('Upload did not complete');
