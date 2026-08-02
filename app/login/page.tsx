@@ -100,6 +100,7 @@ export default function LoginPage() {
           width={56}
           height={56}
           className="mb-6 object-contain"
+          unoptimized
         />
         <h1 className="text-xl mb-1">ACAD Student Portal</h1>
         <p className="text-inkFaint text-sm mb-8">Sign in with your IIMU account</p>
