@@ -16,6 +16,12 @@ function getDriveClient() {
   return google.drive({ version: 'v3', auth });
 }
 
+export async function getFileMetadata(fileId: string) {
+  const drive = getDriveClient();
+  const { data } = await drive.files.get({ fileId, fields: 'id, name, mimeType' });
+  return data;
+}
+
 export async function getPrereadFile(fileId: string) {
   const drive = getDriveClient();
 

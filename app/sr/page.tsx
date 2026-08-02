@@ -68,6 +68,20 @@ export default function SrUploadPage() {
         <p className="text-inkFaint text-sm">Upload prereads for your upcoming sessions.</p>
       </div>
 
+      <div className="card p-4 text-sm text-inkSoft">
+        <b>How this works:</b> upload your file to{' '}
+        <a
+          href="https://drive.google.com/drive/folders/1jssyXnnDN35fZhp18CvgicTUZU3ujlJX"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-brand-900 underline font-semibold"
+        >
+          this shared folder
+        </a>{' '}
+        yourself first (any file type), then come back here, copy its share link from Drive
+        (right-click the file → Share → Copy link), and paste it into the session below.
+      </div>
+
       {sessions.length === 0 && (
         <p className="text-sm text-inkFaint italic">No upcoming sessions found for your subject(s).</p>
       )}
@@ -80,7 +94,7 @@ export default function SrUploadPage() {
 }
 
 function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChanged: () => void }) {
-  const [file, setFile] = useState<File | null>(null);
+  const [driveLink, setDriveLink] = useState('');
   const [applyToNext, setApplyToNext] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [togglingNoPreread, setTogglingNoPreread] = useState(false);
@@ -89,83 +103,34 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
 
   const hasFiles = (session.prereads?.length ?? 0) > 0;
 
-  async function handleUpload() {
-    if (!file) return;
+  async function handleSaveLink() {
+    if (!driveLink.trim()) return;
     setUploading(true);
     setError(null);
     setSuccessMsg(null);
     try {
-      // Step 1: start a Drive upload session (verifies SR status server-side).
-      const initRes = await fetch('/api/prereads/init-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: session.id, fileName: file.name, mimeType: file.type })
-      });
-      const initData = await initRes.json();
-      if (!initRes.ok) throw new Error(initData.error ?? 'Could not start upload');
-
-      const uploadUrl = initData.uploadUrl;
-      const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB — safely under Vercel's 4.5MB per-request limit
-      const totalSize = file.size;
-      let start = 0;
-      let driveFile: { id: string; name: string } | null = null;
-
-      // Step 2: send the file in pieces, each relayed through OUR OWN server (same-origin,
-      // no CORS issue) to Google's resumable session. The browser never talks to Google
-      // directly — that's what caused the earlier "Failed to fetch" (Google only allows
-      // CORS from whichever origin started the session, which was our server, not the
-      // browser — so a direct browser→Google request could never have worked here).
-      while (start < totalSize) {
-        const end = Math.min(start + CHUNK_SIZE, totalSize);
-        const chunk = file.slice(start, end);
-
-        const chunkRes = await fetch('/api/prereads/upload-chunk', {
-          method: 'PUT',
-          headers: {
-            'x-upload-url': uploadUrl,
-            'Content-Range': `bytes ${start}-${end - 1}/${totalSize}`
-          },
-          body: chunk
-        });
-
-        if (chunkRes.status === 308) {
-          start = end; // Google confirmed this piece, send the next one
-          continue;
-        }
-        if (chunkRes.ok) {
-          driveFile = await chunkRes.json(); // final chunk — upload complete
-          break;
-        }
-        const errBody = await chunkRes.text();
-        throw new Error(`Upload failed at byte ${start} (status ${chunkRes.status}): ${errBody}`);
-      }
-
-      if (!driveFile) throw new Error('Upload did not complete');
-
-      // Step 3: record it — small JSON payload, well under any size limit.
-      const finalizeRes = await fetch('/api/prereads/finalize-upload', {
+      const res = await fetch('/api/prereads/finalize-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: session.id,
-          driveFileId: driveFile.id,
-          fileName: file.name,
+          driveLink: driveLink.trim(),
           applyToNextSession: applyToNext
         })
       });
-      const finalizeData = await finalizeRes.json();
-      if (!finalizeRes.ok) throw new Error(finalizeData.error ?? 'Upload succeeded but saving the record failed');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to save');
 
       setSuccessMsg(
-        finalizeData.appliedToNextSession
-          ? 'Uploaded — applied to this session and the next one.'
-          : 'Uploaded.'
+        data.appliedToNextSession
+          ? `Saved "${data.fileName}" — applied to this session and the next one.`
+          : `Saved "${data.fileName}".`
       );
-      setFile(null);
+      setDriveLink('');
       setApplyToNext(false);
       onChanged();
     } catch (err: any) {
-      setError(err.message ?? 'Upload failed');
+      setError(err.message ?? 'Failed to save');
     } finally {
       setUploading(false);
     }
@@ -223,16 +188,18 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
 
       <div className="flex items-center gap-2 flex-wrap">
         <input
-          type="file"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="text-xs"
+          type="text"
+          placeholder="Paste Drive share link here"
+          value={driveLink}
+          onChange={(e) => setDriveLink(e.target.value)}
+          className="text-xs border border-line rounded-lg px-2.5 py-1.5 flex-1 min-w-[220px]"
         />
         <button
-          onClick={handleUpload}
-          disabled={!file || uploading}
+          onClick={handleSaveLink}
+          disabled={!driveLink.trim() || uploading}
           className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white bg-brand-900 hover:bg-brand-800 disabled:opacity-40"
         >
-          {uploading ? 'Uploading…' : 'Upload'}
+          {uploading ? 'Saving…' : 'Save'}
         </button>
         <label className="flex items-center gap-1.5 text-xs text-inkSoft">
           <input
