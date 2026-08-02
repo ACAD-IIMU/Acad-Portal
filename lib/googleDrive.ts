@@ -57,7 +57,7 @@ export async function deletePrereadFile(fileId: string) {
   await drive.files.delete({ fileId });
 }
 
-export async function initiateResumableUpload(fileName: string, mimeType: string): Promise<string> {
+export async function getPrereadAccessToken(): Promise<string> {
   const auth = new google.auth.GoogleAuth({
     credentials: {
       client_email: process.env.PREREAD_SERVICE_ACCOUNT_EMAIL,
@@ -66,7 +66,13 @@ export async function initiateResumableUpload(fileName: string, mimeType: string
     scopes: ['https://www.googleapis.com/auth/drive']
   });
   const client = await auth.getClient();
-  const { token: accessToken } = await client.getAccessToken();
+  const { token } = await client.getAccessToken();
+  if (!token) throw new Error('Failed to obtain access token');
+  return token;
+}
+
+export async function initiateResumableUpload(fileName: string, mimeType: string): Promise<string> {
+  const accessToken = await getPrereadAccessToken();
   const folderId = process.env.PREREAD_DRIVE_FOLDER_ID;
 
   // Raw REST call (not the googleapis library's drive.files.create) — this step only needs
