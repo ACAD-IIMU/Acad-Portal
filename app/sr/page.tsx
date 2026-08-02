@@ -95,8 +95,7 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
     setError(null);
     setSuccessMsg(null);
     try {
-      // Step 1: ask our server to start a Drive upload session (small JSON call, verifies
-      // SR status server-side before anything else happens).
+      // Step 1: start a Drive upload session (verifies SR status server-side).
       const initRes = await fetch('/api/prereads/init-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -105,19 +104,44 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
       const initData = await initRes.json();
       if (!initRes.ok) throw new Error(initData.error ?? 'Could not start upload');
 
-      // Step 2: the browser uploads the actual file DIRECTLY to Google — this request goes
-      // straight to Google's servers, not through our own Vercel function, so file size
-      // isn't limited by anything on our end.
-      const uploadRes = await fetch(initData.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file
-      });
-      if (!uploadRes.ok) throw new Error(`Upload to Drive failed (${uploadRes.status})`);
-      const driveFile = await uploadRes.json();
+      const uploadUrl = initData.uploadUrl;
+      const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB — safely under Vercel's 4.5MB per-request limit
+      const totalSize = file.size;
+      let start = 0;
+      let driveFile: { id: string; name: string } | null = null;
 
-      // Step 3: tell our server the upload succeeded, so it can record it — small JSON
-      // payload again, well under any size limit regardless of the original file's size.
+      // Step 2: send the file in pieces, each relayed through OUR OWN server (same-origin,
+      // no CORS issue) to Google's resumable session. The browser never talks to Google
+      // directly — that's what caused the earlier "Failed to fetch" (Google only allows
+      // CORS from whichever origin started the session, which was our server, not the
+      // browser — so a direct browser→Google request could never have worked here).
+      while (start < totalSize) {
+        const end = Math.min(start + CHUNK_SIZE, totalSize);
+        const chunk = file.slice(start, end);
+
+        const chunkRes = await fetch('/api/prereads/upload-chunk', {
+          method: 'PUT',
+          headers: {
+            'x-upload-url': uploadUrl,
+            'Content-Range': `bytes ${start}-${end - 1}/${totalSize}`
+          },
+          body: chunk
+        });
+
+        if (chunkRes.status === 308) {
+          start = end; // Google confirmed this piece, send the next one
+          continue;
+        }
+        if (chunkRes.ok) {
+          driveFile = await chunkRes.json(); // final chunk — upload complete
+          break;
+        }
+        throw new Error(`Upload failed at byte ${start} (status ${chunkRes.status})`);
+      }
+
+      if (!driveFile) throw new Error('Upload did not complete');
+
+      // Step 3: record it — small JSON payload, well under any size limit.
       const finalizeRes = await fetch('/api/prereads/finalize-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
