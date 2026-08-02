@@ -55,5 +55,12 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)']
+  // Static asset extensions (png, jpg, svg, etc.) are excluded here alongside
+  // _next/static, _next/image, and favicon.ico. Without this, any public/
+  // image referenced on a page a logged-out user can see (e.g. the logo on
+  // /login itself) gets redirected to /login instead of loading — exactly
+  // the bug that broke the login-page logo.
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'
+  ]
 };
