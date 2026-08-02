@@ -20,6 +20,12 @@ export default async function HomePage() {
 
   const { data: student } = await supabase.from('students').select('*').single();
 
+  const { count: srCount } = await supabase
+    .from('sr_assignments')
+    .select('id', { count: 'exact', head: true })
+    .eq('student_id', student?.id ?? '');
+  const isSr = (srCount ?? 0) > 0;
+
   // Computed once, explicitly in IST — the server's own runtime timezone (UTC on
   // Vercel) is irrelevant here. Using the same instant formatted two ways: one
   // machine-readable (YYYY-MM-DD, for the DB query) and one for display, so both
@@ -85,11 +91,21 @@ export default async function HomePage() {
           <h1 className="text-2xl">Welcome, {student?.full_name?.split(' ')[0] ?? 'there'}</h1>
           <p className="text-inkFaint text-sm">Here&apos;s what&apos;s on today.</p>
         </div>
-        <UserMenu
-          name={student?.full_name ?? 'Student'}
-          regNo={student?.reg_no}
-          batchLabel={student?.batch_label}
-        />
+        <div className="flex items-center gap-3">
+          {isSr && (
+            <a
+              href="/sr"
+              className="text-xs font-semibold text-brand-900 border border-brand-900 rounded-full px-3 py-1.5 hover:bg-brand-50"
+            >
+              📄 SR Tools
+            </a>
+          )}
+          <UserMenu
+            name={student?.full_name ?? 'Student'}
+            regNo={student?.reg_no}
+            batchLabel={student?.batch_label}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-5">
