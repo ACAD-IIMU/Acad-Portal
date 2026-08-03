@@ -1,7 +1,7 @@
 // components/CourseWorkshopsRow.tsx
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { requestCourseWorkshopRedress } from '@/app/eap/actions';
 
 type Subject = {
@@ -46,12 +46,15 @@ export default function CourseWorkshopsRow({
     new Set(subjects.filter((s) => s.redressRequested).map((s) => s.name))
   );
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const isPendingScore = value === null || value === undefined;
 
   function openModal(subjectName: string) {
     setModalSubject(subjectName);
     setReason('');
     setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   function submitRedress() {
@@ -60,8 +63,14 @@ export default function CourseWorkshopsRow({
       setError('Please enter a reason.');
       return;
     }
+    const proofFile = fileInputRef.current?.files?.[0];
+    const formData = new FormData();
+    formData.set('subjectName', modalSubject);
+    formData.set('reason', reason);
+    if (proofFile) formData.set('proof', proofFile);
+
     startTransition(async () => {
-      const result = await requestCourseWorkshopRedress(modalSubject, reason);
+      const result = await requestCourseWorkshopRedress(formData);
       if (result.error) {
         setError(result.error);
         return;
@@ -178,7 +187,21 @@ export default function CourseWorkshopsRow({
                   placeholder="Explain why this should be marked present..."
                 />
                 {error && <p className="text-xs text-danger mb-2">{error}</p>}
-                <div className="flex gap-2.5 mt-3">
+
+                <label className="block text-xs font-semibold text-inkFaint uppercase tracking-wide mb-1.5 mt-3">
+                  Proof <span className="normal-case font-normal text-inkFaint">(optional)</span>
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  className="w-full text-sm border border-line rounded-lg p-2 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-900"
+                />
+                <p className="text-xs text-inkFaint mt-1">
+                  Screenshot, email, or document supporting your reason. PDF, PNG, or JPG, under 4MB.
+                </p>
+
+                <div className="flex gap-2.5 mt-4">
                   <button
                     onClick={() => setModalSubject(null)}
                     className="flex-1 py-2.5 rounded-lg border border-line text-sm font-semibold hover:bg-brand-50 transition"

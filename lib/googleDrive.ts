@@ -63,6 +63,32 @@ export async function deletePrereadFile(fileId: string) {
   await drive.files.delete({ fileId });
 }
 
+// EAP Course Workshop redress proof uploads. Reuses the same service account
+// as prereads (it's really just "the shared Drive service account"), but
+// writes into a SEPARATE folder — EAP_REDRESS_DRIVE_FOLDER_ID, not
+// PREREAD_DRIVE_FOLDER_ID — so redress evidence doesn't mix with preread
+// files. That folder needs to exist in Drive and be shared with the same
+// service account email before this will work.
+export async function uploadEapRedressProof(fileName: string, mimeType: string, buffer: Buffer) {
+  const drive = getDriveClient();
+  const folderId = process.env.EAP_REDRESS_DRIVE_FOLDER_ID;
+
+  const { data } = await drive.files.create({
+    requestBody: {
+      name: fileName,
+      parents: folderId ? [folderId] : undefined
+    },
+    media: {
+      mimeType,
+      body: Readable.from(buffer)
+    },
+    fields: 'id, name'
+  });
+
+  if (!data.id) throw new Error('Drive upload did not return a file id');
+  return { fileId: data.id, fileName: data.name ?? fileName };
+}
+
 export async function getPrereadAccessToken(): Promise<string> {
   const auth = new google.auth.GoogleAuth({
     credentials: {
