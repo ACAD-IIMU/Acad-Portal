@@ -13,6 +13,7 @@ const BIDDING_TERM = 'Term V'; // the term being bid FOR — one ahead of CURREN
 
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
+import CourseWorkshopsRow from '@/components/CourseWorkshopsRow';
 import type { ReactNode } from 'react';
 
 type EapPointsRow = {
@@ -50,6 +51,68 @@ function Shell({ batchLabel, children }: { batchLabel?: string; children: ReactN
     </div>
   );
 }
+
+// A normal, non-expandable component row (everything except Course Workshops).
+function PlainRow({ row }: { row: ComponentRow }) {
+  const isPending =
+    row.value === null || row.value === undefined || (row.label === 'CGPA Component' && !row.max);
+
+  return (
+    <tr className="border-b border-line last:border-none">
+      <td className="py-2.5">{row.label}</td>
+      <td className="py-2.5 text-right font-mono">
+        {isPending ? (
+          <span className="text-xs font-semibold text-gold-600 bg-gold-100 px-2.5 py-1 rounded-full whitespace-nowrap">
+            Pending
+          </span>
+        ) : row.isPenalty ? (
+          row.value === 0 ? (
+            '0'
+          ) : (
+            <span className="text-danger">{row.value}</span>
+          )
+        ) : (
+          <>
+            {row.value}
+            <span className="font-sans text-inkFaint text-xs ml-0.5">/{row.max}</span>
+          </>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+// The full 25-elective master list for this term, from the real DER Round 1
+// report (StudentWiseDemandEstimationReport) — used only when a student has
+// zero DER-1 selection rows, meaning they didn't submit DER-1 at all. Per
+// policy IV.4.4, that means they're mandated for every workshop, not none.
+const ALL_ELECTIVES = [
+  'Advanced Methods for Data Analytics',
+  'Advanced Qualitative Research Methods',
+  'Advanced Selling Skills and Management',
+  'Advertising Management & Integrated Marketing Communication',
+  'Business Applications of Artificial Intelligence',
+  'Competing through Operations',
+  'Contemporary Project Management',
+  'Crafting Meaningful Experiences',
+  'Customer Relationship Management',
+  'FINTECH',
+  'Financial Risk Management',
+  'Foreign Trade and Indirect Tax',
+  'Innovation Management',
+  "Introduction to Management Consulting - A practitioner's approach to solving client problems",
+  'Management Consulting',
+  'Marketing Analytics',
+  'Marketing for Sustainable World',
+  'Merger, Acquisition & Corporate Restructuring',
+  'Multi-Sectoral Analysis in Indian Context',
+  'Negotiations',
+  'Retail Management',
+  'Rural Marketing',
+  'Strategic Digital Supply Chain Management',
+  'Strategic Leadership and Management',
+  'Theory of Constraint',
+];
 
 export default async function EapPointsPage() {
   const supabase = createClient();
@@ -100,6 +163,40 @@ export default async function EapPointsPage() {
 
   const points = pointsData as EapPointsRow | null;
 
+  const [{ data: der1Selections }, { data: attendanceRows }] = await Promise.all([
+    supabase
+      .from('eap_der1_selections')
+      .select('subject_name')
+      .eq('reg_no', student.reg_no)
+      .eq('term', BIDDING_TERM),
+    supabase
+      .from('eap_course_workshop_attendance')
+      .select('subject_name, status, redress_requested')
+      .eq('reg_no', student.reg_no)
+      .eq('term', BIDDING_TERM),
+  ]);
+
+  // Real source of truth for "mandated": actual DER-1 picks. Zero rows means
+  // this student never submitted DER-1 at all — per policy IV.4.4, that
+  // makes every elective mandated, not none.
+  const didNotSubmitDer1 = !der1Selections || der1Selections.length === 0;
+  const mandatedSubjects = didNotSubmitDer1
+    ? ALL_ELECTIVES
+    : der1Selections.map((s) => s.subject_name);
+
+  const attendanceBySubject = new Map(
+    (attendanceRows ?? []).map((r) => [r.subject_name, r])
+  );
+
+  const courseWorkshopSubjects = mandatedSubjects.map((name) => {
+    const attendance = attendanceBySubject.get(name);
+    return {
+      name,
+      status: (attendance?.status ?? null) as 'P' | 'A' | 'L' | 'S' | 'S_L' | null,
+      redressRequested: attendance?.redress_requested ?? false,
+    };
+  });
+
   if (!points) {
     return (
       <Shell batchLabel={student.batch_label}>
@@ -116,11 +213,13 @@ export default async function EapPointsPage() {
     );
   }
 
-  const rows: ComponentRow[] = [
+  const topRows: ComponentRow[] = [
     { label: 'Fixed', value: points.fixed, max: 250 },
     { label: 'Flexi Core', value: points.flexi_core, max: 150 },
     { label: 'Stream Workshop', value: points.stream_workshop, max: 90 },
-    { label: 'Course Workshops', value: points.course_workshops, max: 210 },
+  ];
+
+  const bottomRows: ComponentRow[] = [
     { label: 'DER Round 1', value: points.der_1, max: 50 },
     { label: 'DER Round 2', value: points.der_2, max: 100 },
     { label: 'Mock Bidding', value: points.mock_bid, max: 30 },
@@ -132,6 +231,8 @@ export default async function EapPointsPage() {
     { label: 'Preliminary Yearly Survey', value: points.pys, max: null, isPenalty: true },
   ];
 
+  const rows = [...topRows, { label: 'Course Workshops', value: points.course_workshops, max: 210 }, ...bottomRows];
+
   const hasPendingComponent = rows.some(
     (r) => !r.isPenalty && (r.value === null || r.value === undefined || (r.label === 'CGPA Component' && !r.max))
   );
@@ -139,13 +240,7 @@ export default async function EapPointsPage() {
   return (
     <Shell batchLabel={student.batch_label}>
       {/* Total banner */}
-      <div
-        className="rounded-card p-8 mb-5 flex items-center justify-between gap-6 flex-wrap text-white"
-        style={{
-          background:
-            'linear-gradient(120deg, theme(colors.brand.950), theme(colors.brand.800) 55%, theme(colors.plum))',
-        }}
-      >
+      <div className="rounded-card p-8 mb-5 flex items-center justify-between gap-6 flex-wrap text-white bg-[linear-gradient(120deg,#2a0f16,#7a2331_55%,#702c4e)]">
         <div>
           <div className="font-display text-4xl font-semibold leading-none">
             {points.total}
@@ -187,36 +282,20 @@ export default async function EapPointsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
-              const isPending =
-                row.value === null ||
-                row.value === undefined ||
-                (row.label === 'CGPA Component' && !row.max);
+            {topRows.map((row) => (
+              <PlainRow key={row.label} row={row} />
+            ))}
 
-              return (
-                <tr key={row.label} className="border-b border-line last:border-none">
-                  <td className="py-2.5">{row.label}</td>
-                  <td className="py-2.5 text-right font-mono">
-                    {isPending ? (
-                      <span className="text-xs font-semibold text-gold-600 bg-gold-100 px-2.5 py-1 rounded-full whitespace-nowrap">
-                        Pending
-                      </span>
-                    ) : row.isPenalty ? (
-                      row.value === 0 ? (
-                        '0'
-                      ) : (
-                        <span className="text-danger">{row.value}</span>
-                      )
-                    ) : (
-                      <>
-                        {row.value}
-                        <span className="font-sans text-inkFaint text-xs ml-0.5">/{row.max}</span>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            <CourseWorkshopsRow
+              value={points.course_workshops}
+              max={210}
+              didNotSubmitDer1={didNotSubmitDer1}
+              subjects={courseWorkshopSubjects}
+            />
+
+            {bottomRows.map((row) => (
+              <PlainRow key={row.label} row={row} />
+            ))}
           </tbody>
         </table>
       </div>
