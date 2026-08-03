@@ -21,6 +21,7 @@ type EapPointsRow = {
   flexi_core: number | null;
   stream_workshop: number | null;
   course_workshops: number | null;
+  course_workshops_na: boolean;
   der_1: number | null;
   der_2: number | null;
   mock_bid: number | null;
@@ -39,6 +40,7 @@ type ComponentRow = {
   value: number | null | undefined;
   max: number | null | undefined;
   isPenalty?: boolean;
+  isNA?: boolean;
 };
 
 // Wraps every return path so the sidebar is always present, error/empty
@@ -155,7 +157,7 @@ export default async function EapPointsPage() {
   const { data: pointsData } = await supabase
     .from('eap_points')
     .select(
-      'fixed, flexi_core, stream_workshop, course_workshops, der_1, der_2, mock_bid, forms_by_acad, cgpa_component, cgpa_max, subject_representative, flexi_core_batchmeet, eap_batchmeet, pys, total'
+      'fixed, flexi_core, stream_workshop, course_workshops, course_workshops_na, der_1, der_2, mock_bid, forms_by_acad, cgpa_component, cgpa_max, subject_representative, flexi_core_batchmeet, eap_batchmeet, pys, total'
     )
     .eq('reg_no', student.reg_no)
     .eq('term', BIDDING_TERM)
@@ -231,10 +233,14 @@ export default async function EapPointsPage() {
     { label: 'Preliminary Yearly Survey', value: points.pys, max: null, isPenalty: true },
   ];
 
-  const rows = [...topRows, { label: 'Course Workshops', value: points.course_workshops, max: 210 }, ...bottomRows];
+  const rows = [
+    ...topRows,
+    { label: 'Course Workshops', value: points.course_workshops, max: 210, isNA: points.course_workshops_na },
+    ...bottomRows,
+  ];
 
   const hasPendingComponent = rows.some(
-    (r) => !r.isPenalty && (r.value === null || r.value === undefined || (r.label === 'CGPA Component' && !r.max))
+    (r) => !r.isPenalty && !r.isNA && (r.value === null || r.value === undefined || (r.label === 'CGPA Component' && !r.max))
   );
 
   return (
@@ -289,6 +295,7 @@ export default async function EapPointsPage() {
             <CourseWorkshopsRow
               value={points.course_workshops}
               max={210}
+              isNA={points.course_workshops_na}
               didNotSubmitDer1={didNotSubmitDer1}
               subjects={courseWorkshopSubjects}
             />

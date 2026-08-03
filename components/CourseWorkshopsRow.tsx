@@ -30,11 +30,13 @@ export default function CourseWorkshopsRow({
   value,
   max,
   didNotSubmitDer1,
+  isNA,
   subjects,
 }: {
   value: number | null;
   max: number;
   didNotSubmitDer1: boolean;
+  isNA: boolean;
   subjects: Subject[];
 }) {
   const [open, setOpen] = useState(false);
@@ -78,6 +80,20 @@ export default function CourseWorkshopsRow({
       setSubmittedFor((prev) => new Set(prev).add(modalSubject));
       setModalSubject(null);
     });
+  }
+
+  // Exchange-program students aren't doing Course Workshops this term at
+  // all — a flat, non-expandable N/A row, not a Pending state implying
+  // data is still coming.
+  if (isNA) {
+    return (
+      <tr className="border-b border-line">
+        <td className="py-2.5">Course Workshops</td>
+        <td className="py-2.5 text-right">
+          <span className="text-xs italic text-inkFaint">N/A — Exchange Program</span>
+        </td>
+      </tr>
+    );
   }
 
   return (
