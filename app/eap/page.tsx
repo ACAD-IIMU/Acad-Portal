@@ -3,7 +3,8 @@
 // Matches your real stack: sync createClient() from lib/supabase/server.ts,
 // students joined via auth_user_id, term stored as text ('Term IV'/'Term V'),
 // styled with the same Tailwind tokens (brand/gold/plum/ink/line/danger) and
-// the existing .card class as TodaysClasses.tsx / UserMenu.tsx.
+// the existing .card class as TodaysClasses.tsx / UserMenu.tsx. Sidebar wraps
+// every return path so it's always visible, even on error/empty states.
 //
 // Update these two each term — same hardcoding pattern Home uses for
 // TERM_START/TERM_END, since there's no current_term column anywhere yet.
@@ -11,6 +12,8 @@ const CURRENT_TERM = 'Term IV';
 const BIDDING_TERM = 'Term V'; // the term being bid FOR — one ahead of CURRENT_TERM
 
 import { createClient } from '@/lib/supabase/server';
+import Sidebar from '@/components/Sidebar';
+import type { ReactNode } from 'react';
 
 type EapPointsRow = {
   fixed: number;
@@ -37,6 +40,17 @@ type ComponentRow = {
   isPenalty?: boolean;
 };
 
+// Wraps every return path so the sidebar is always present, error/empty
+// states included — matches the pattern of one shared shell per screen.
+function Shell({ batchLabel, children }: { batchLabel?: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar batchLabel={batchLabel} />
+      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8">{children}</main>
+    </div>
+  );
+}
+
 export default async function EapPointsPage() {
   const supabase = createClient();
 
@@ -49,9 +63,11 @@ export default async function EapPointsPage() {
   // fallback, not the primary auth check.
   if (!user) {
     return (
-      <div className="card p-6">
-        <p className="text-sm text-inkSoft">Please log in to view your EAP points.</p>
-      </div>
+      <Shell>
+        <div className="card p-6">
+          <p className="text-sm text-inkSoft">Please log in to view your EAP points.</p>
+        </div>
+      </Shell>
     );
   }
 
@@ -63,11 +79,13 @@ export default async function EapPointsPage() {
 
   if (studentError || !student) {
     return (
-      <div className="card p-6">
-        <p className="text-sm text-inkSoft">
-          We couldn&apos;t find your student record. If this looks wrong, contact ACAD.
-        </p>
-      </div>
+      <Shell>
+        <div className="card p-6">
+          <p className="text-sm text-inkSoft">
+            We couldn&apos;t find your student record. If this looks wrong, contact ACAD.
+          </p>
+        </div>
+      </Shell>
     );
   }
 
@@ -84,15 +102,17 @@ export default async function EapPointsPage() {
 
   if (!points) {
     return (
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base">EAP Bid Points</h2>
+      <Shell batchLabel={student.batch_label}>
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base">EAP Bid Points</h2>
+          </div>
+          <p className="text-sm text-inkSoft">
+            {BIDDING_TERM} EAP points haven&apos;t been published yet. Check back once ACAD
+            releases them.
+          </p>
         </div>
-        <p className="text-sm text-inkSoft">
-          {BIDDING_TERM} EAP points haven&apos;t been published yet. Check back once ACAD
-          releases them.
-        </p>
-      </div>
+      </Shell>
     );
   }
 
@@ -117,12 +137,13 @@ export default async function EapPointsPage() {
   );
 
   return (
-    <div>
+    <Shell batchLabel={student.batch_label}>
       {/* Total banner */}
       <div
         className="rounded-card p-8 mb-5 flex items-center justify-between gap-6 flex-wrap text-white"
         style={{
-          background: 'linear-gradient(120deg, theme(colors.brand.950), theme(colors.brand.800) 55%, theme(colors.plum))',
+          background:
+            'linear-gradient(120deg, theme(colors.brand.950), theme(colors.brand.800) 55%, theme(colors.plum))',
         }}
       >
         <div>
@@ -199,6 +220,6 @@ export default async function EapPointsPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </Shell>
   );
 }

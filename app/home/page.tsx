@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import Sidebar from '@/components/Sidebar';
 import TodaysClasses from './TodaysClasses';
 import Reminders from './Reminders';
 import QuickLinks from './QuickLinks';
@@ -86,7 +87,9 @@ export default async function HomePage() {
     .order('event_date');
 
   return (
-    <main className="max-w-6xl mx-auto px-4 py-8 flex flex-col gap-5">
+    <div className="flex min-h-screen">
+      <Sidebar batchLabel={student?.batch_label} />
+      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8 flex flex-col gap-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl">Welcome, {student?.full_name?.split(' ')[0] ?? 'there'}</h1>
@@ -129,6 +132,7 @@ export default async function HomePage() {
         termEnd={TERM_END}
         importantEvents={allTermEvents ?? []}
       />
-    </main>
+      </main>
+    </div>
   );
 }
