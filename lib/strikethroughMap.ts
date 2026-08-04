@@ -1,6 +1,13 @@
 import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
 
+// Duplicated from parseTimetable.ts rather than imported, to avoid a circular
+// import (parseTimetable.ts already imports buildStrikethroughMap from this
+// file). Keep these two in sync if the matching logic ever changes.
+function normalizeSheetName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 export interface StrikeRun {
   text: string;
   struck: boolean;
@@ -44,7 +51,7 @@ function parseRichTextNode(node: any): { text: string; runs?: StrikeRun[] } {
  * module was written). Handles both possible cell text formats: inline strings (`t="inlineStr"`)
  * and the shared-strings table (`t="s"`, common when a file has been through Excel/LibreOffice).
  */
-export async function buildStrikethroughMap(buffer: Buffer): Promise<Map<string, CellStrikeInfo>> {
+export async function buildStrikethroughMap(buffer: Buffer, targetTerm: string): Promise<Map<string, CellStrikeInfo>> {
   const zip = await JSZip.loadAsync(buffer);
 
   const workbookXml = await zip.file("xl/workbook.xml")!.async("string");
@@ -52,11 +59,23 @@ export async function buildStrikethroughMap(buffer: Buffer): Promise<Map<string,
   const workbookDoc = parser.parse(workbookXml);
   const relsDoc = parser.parse(relsXml);
 
-  // Resolve the FIRST sheet's actual file path (matches wb.SheetNames[0] used elsewhere for the grid).
+  // Resolve the sheet by NAME matching targetTerm — not sheets[0]. This used to read
+  // position 0 on the assumption that always matched wb.SheetNames[0] used for the grid
+  // (see parseTimetable.ts); that assumption broke the moment a new tab got added ahead
+  // of the real current-term tab, silently pulling strikethrough data from the wrong
+  // sheet entirely while the grid itself read the correct one — so real cancellations
+  // stopped being detected with no visible error.
   const sheets = asArray(workbookDoc.workbook.sheets.sheet);
-  const firstSheetRid = sheets[0]["@_r:id"];
+  const normalizedTarget = normalizeSheetName(targetTerm);
+  const matchedSheet = sheets.find((s: any) => normalizeSheetName(String(s["@_name"])) === normalizedTarget);
+  if (!matchedSheet) {
+    throw new Error(
+      `No sheet matching term "${targetTerm}" found for strikethrough detection. Available: ${sheets.map((s: any) => s["@_name"]).join(", ")}`
+    );
+  }
+  const targetRid = matchedSheet["@_r:id"];
   const rels = asArray(relsDoc.Relationships.Relationship);
-  const rel = rels.find((r: any) => r["@_Id"] === firstSheetRid);
+  const rel = rels.find((r: any) => r["@_Id"] === targetRid);
   const target = rel["@_Target"].replace(/^\/?xl\//, "");
   const sheetPath = `xl/${target}`;
 

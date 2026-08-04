@@ -244,7 +244,7 @@ function parseTimeRangeLabel(headerText: string): { startTime: string; endTime: 
  * digits and lowercases, so "Term-IV", "Term IV", and "term_iv" all match the same way.
  * Needed because tabs in this workbook aren't consistently named ("Term-IV" uses a
  * hyphen, the newer "Term V" tab uses a space). */
-function normalizeSheetName(name: string): string {
+export function normalizeSheetName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
@@ -274,7 +274,7 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
 
   // Verified separately (see strikethroughMap.ts) — xlsx/exceljs cannot reliably tell struck
   // text apart from normal text within a single cell, so this reads the raw file XML directly.
-  const strikeMap = await buildStrikethroughMap(buffer);
+  const strikeMap = await buildStrikethroughMap(buffer, targetTerm);
 
   // Row 3 (0-indexed row 2) holds the 6 session headers in columns D-I (0-indexed 3-8)
   const slots: TimeSlot[] = [];
