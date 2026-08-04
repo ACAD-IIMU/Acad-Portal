@@ -14,7 +14,7 @@ import { detectClashes } from '@/lib/plannerTypes';
 
 export { detectClashes };
 
-export const CREDIT_LIMIT = 26;
+export const CREDIT_LIMIT = 22;
 
 export type PrefId =
   | 'no_9am'

@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PlannerData } from '@/lib/plannerTypes';
 import {
+  CREDIT_LIMIT,
   detectClashes,
   formatDate,
   slotLabel,
@@ -92,6 +93,7 @@ export default function ManualBuilder({
 
   function addSubject(subject: string) {
     if (selections[subject]) return;
+    if (credits + lookups.creditsOf(subject) > CREDIT_LIMIT) return;
     setSelections((prev) => ({ ...prev, [subject]: data.subject_sections[subject][0] }));
     setQuery('');
     setDropdownOpen(false);
@@ -163,10 +165,12 @@ export default function ManualBuilder({
             className={`text-xs font-mono font-semibold px-2 py-1 rounded-full ${
               credits === 0
                 ? 'text-inkFaint bg-cream'
+                : credits >= CREDIT_LIMIT
+                ? 'text-danger bg-danger-100'
                 : 'text-brand-800 bg-brand-50 border border-brand-100'
             }`}
           >
-            {credits} credit{credits === 1 ? '' : 's'}
+            {credits} / {CREDIT_LIMIT} credits
           </span>
         </div>
 
@@ -257,13 +261,14 @@ export default function ManualBuilder({
               ) : (
                 suggestions.map((subject) => {
                   const added = Boolean(selections[subject]);
+                  const wouldExceed = !added && credits + lookups.creditsOf(subject) > CREDIT_LIMIT;
                   return (
                     <button
                       key={subject}
-                      disabled={added}
+                      disabled={added || wouldExceed}
                       onClick={() => addSubject(subject)}
                       className={`w-full text-left px-3 py-2 text-[13px] border-b border-line last:border-none transition ${
-                        added
+                        added || wouldExceed
                           ? 'text-inkFaint cursor-not-allowed'
                           : 'hover:bg-brand-50 text-ink'
                       }`}
@@ -273,6 +278,9 @@ export default function ManualBuilder({
                         {(data.subject_sections[subject] ?? []).join(', ')}
                       </span>
                       {added && <span className="text-inkFaint text-[11px] ml-1">· added</span>}
+                      {wouldExceed && (
+                        <span className="text-danger text-[11px] ml-1">· exceeds {CREDIT_LIMIT} credit limit</span>
+                      )}
                     </button>
                   );
                 })
