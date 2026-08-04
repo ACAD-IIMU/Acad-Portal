@@ -297,6 +297,9 @@ export default async function EapPointsPage() {
               max={210}
               isNA={points.course_workshops_na}
               didNotSubmitDer1={didNotSubmitDer1}
+              regNo={student.reg_no}
+              term={BIDDING_TERM}
+              batchLabel={student.batch_label}
               subjects={courseWorkshopSubjects}
             />
 

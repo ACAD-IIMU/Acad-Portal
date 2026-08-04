@@ -1,13 +1,17 @@
 // components/CourseWorkshopsRow.tsx
+//
+// Redress is a mailto: link, not an in-app form — see app/eap/page.tsx for
+// why. That means there's no server round-trip and no way to know whether a
+// student actually sent the email or just closed the tab, so this component
+// has no "already requested" state anymore: the button is always just a link.
+
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
-import { requestCourseWorkshopRedress } from '@/app/eap/actions';
+import { useState } from 'react';
 
 type Subject = {
   name: string;
   status: 'P' | 'A' | 'L' | 'S' | 'S_L' | null; // null = mandated but no attendance data yet
-  redressRequested: boolean;
 };
 
 const STATUS_LABEL: Record<NonNullable<Subject['status']>, string> = {
@@ -26,61 +30,55 @@ const STATUS_STYLE: Record<NonNullable<Subject['status']>, string> = {
   S_L: 'bg-danger-100 text-danger',
 };
 
+function buildRedressMailto(subjectName: string, regNo: string, term: string, batchLabel: string) {
+  const year = batchLabel.match(/\d{4}/)?.[0] ?? '';
+  const to = year ? `acad.${year}@iimu.ac.in` : '';
+
+  const subject = `EAP Redress — ${term} — ${subjectName} — ${regNo}`;
+
+  const body = [
+    'Hi ACAD,',
+    '',
+    "I'd like to request a redress for the Course Workshop session below.",
+    '',
+    `Reg. No.: ${regNo}`,
+    `Subject: ${subjectName}`,
+    `Term: ${term}`,
+    '',
+    'Reason:',
+    '[please describe why you were marked absent]',
+    '',
+    '',
+    'Please attach your proof (screenshot, email, etc.) to this email before sending — a request without proof attached will not be considered.',
+    '',
+    'Thanks',
+  ].join('\n');
+
+  return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 export default function CourseWorkshopsRow({
   value,
   max,
   didNotSubmitDer1,
   isNA,
+  regNo,
+  term,
+  batchLabel,
   subjects,
 }: {
   value: number | null;
   max: number;
   didNotSubmitDer1: boolean;
   isNA: boolean;
+  regNo: string;
+  term: string;
+  batchLabel: string;
   subjects: Subject[];
 }) {
   const [open, setOpen] = useState(false);
-  const [modalSubject, setModalSubject] = useState<string | null>(null);
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const [submittedFor, setSubmittedFor] = useState<Set<string>>(
-    new Set(subjects.filter((s) => s.redressRequested).map((s) => s.name))
-  );
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isPendingScore = value === null || value === undefined;
-
-  function openModal(subjectName: string) {
-    setModalSubject(subjectName);
-    setReason('');
-    setError(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  }
-
-  function submitRedress() {
-    if (!modalSubject) return;
-    if (!reason.trim()) {
-      setError('Please enter a reason.');
-      return;
-    }
-    const proofFile = fileInputRef.current?.files?.[0];
-    const formData = new FormData();
-    formData.set('subjectName', modalSubject);
-    formData.set('reason', reason);
-    if (proofFile) formData.set('proof', proofFile);
-
-    startTransition(async () => {
-      const result = await requestCourseWorkshopRedress(formData);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      setSubmittedFor((prev) => new Set(prev).add(modalSubject));
-      setModalSubject(null);
-    });
-  }
 
   // Exchange-program students aren't doing Course Workshops this term at
   // all — a flat, non-expandable N/A row, not a Pending state implying
@@ -133,7 +131,6 @@ export default function CourseWorkshopsRow({
               </p>
               <div className="flex flex-col gap-0">
                 {subjects.map((s) => {
-                  const alreadySubmitted = submittedFor.has(s.name);
                   const isAbsent = s.status === 'A' || s.status === 'S_L';
                   return (
                     <div
@@ -153,85 +150,19 @@ export default function CourseWorkshopsRow({
                             {STATUS_LABEL[s.status]}
                           </span>
                         )}
-                        {isAbsent &&
-                          (alreadySubmitted ? (
-                            <span className="text-xs text-inkFaint border border-line rounded-full px-2.5 py-1 whitespace-nowrap">
-                              Redress requested
-                            </span>
-                          ) : (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openModal(s.name);
-                              }}
-                              className="text-xs border border-line rounded-full px-2.5 py-1 hover:border-danger hover:text-danger transition whitespace-nowrap"
-                            >
-                              Redress
-                            </button>
-                          ))}
+                        {isAbsent && (
+                          <a
+                            href={buildRedressMailto(s.name, regNo, term, batchLabel)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs border border-line rounded-full px-2.5 py-1 hover:border-danger hover:text-danger transition whitespace-nowrap"
+                          >
+                            Redress
+                          </a>
+                        )}
                       </div>
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
-
-      {modalSubject && (
-        <tr>
-          <td colSpan={2} className="p-0">
-            <div
-              className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-5"
-              onClick={() => setModalSubject(null)}
-            >
-              <div
-                className="bg-white rounded-2xl p-7 max-w-[420px] w-full shadow-xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h3 className="text-lg font-semibold mb-1">Request redress</h3>
-                <p className="text-sm text-inkSoft mb-4">{modalSubject}</p>
-                <label className="block text-xs font-semibold text-inkFaint uppercase tracking-wide mb-1.5">
-                  Reason
-                </label>
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={4}
-                  className="w-full border border-line rounded-lg p-3 text-sm mb-1.5 focus:outline-none focus:border-brand-700"
-                  placeholder="Explain why this should be marked present..."
-                />
-                {error && <p className="text-xs text-danger mb-2">{error}</p>}
-
-                <label className="block text-xs font-semibold text-inkFaint uppercase tracking-wide mb-1.5 mt-3">
-                  Proof <span className="normal-case font-normal text-inkFaint">(optional)</span>
-                </label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.png,.jpg,.jpeg"
-                  className="w-full text-sm border border-line rounded-lg p-2 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-900"
-                />
-                <p className="text-xs text-inkFaint mt-1">
-                  Screenshot, email, or document supporting your reason. PDF, PNG, or JPG, under 4MB.
-                </p>
-
-                <div className="flex gap-2.5 mt-4">
-                  <button
-                    onClick={() => setModalSubject(null)}
-                    className="flex-1 py-2.5 rounded-lg border border-line text-sm font-semibold hover:bg-brand-50 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={submitRedress}
-                    disabled={isPending}
-                    className="flex-1 py-2.5 rounded-lg bg-brand-900 text-white text-sm font-semibold hover:bg-brand-800 transition disabled:opacity-60"
-                  >
-                    {isPending ? 'Submitting…' : 'Submit'}
-                  </button>
-                </div>
               </div>
             </div>
           </td>
