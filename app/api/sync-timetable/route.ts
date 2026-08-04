@@ -59,7 +59,7 @@ export async function GET(req: Request) {
   }
 
   // 2) Parse it.
-  const { sessions, unmapped, skippedStrikethrough } = await parseTimetableWorkbook(buffer);
+  const { sessions, unmapped, skippedStrikethrough } = await parseTimetableWorkbook(buffer, TERM);
 
   // 3) Resolve subject_id / section_id via the tables already populated from the enrollment import.
   const { data: subjects, error: subjErr } = await supabase
@@ -158,15 +158,20 @@ export async function GET(req: Request) {
       : null
   }));
 
-  const { error: deleteEventsErr } = await supabase.from("important_events").delete().eq("term", TERM);
-  if (deleteEventsErr) {
-    return NextResponse.json(
-      { error: "Failed to clear old important_events", detail: deleteEventsErr.message },
-      { status: 500 }
-    );
-  }
-
+  // Guard against exactly what just happened: a parse that comes back with zero events
+  // (wrong sheet, corrupted source data, etc.) should never wipe existing real events —
+  // leaving one cycle's data stale is far safer than deleting real quiz/exam reminders
+  // with nothing to replace them. Only touch important_events if there's something to
+  // actually replace it with.
   if (eventRowsToInsert.length > 0) {
+    const { error: deleteEventsErr } = await supabase.from("important_events").delete().eq("term", TERM);
+    if (deleteEventsErr) {
+      return NextResponse.json(
+        { error: "Failed to clear old important_events", detail: deleteEventsErr.message },
+        { status: 500 }
+      );
+    }
+
     const { error: insertEventsErr } = await supabase.from("important_events").insert(eventRowsToInsert);
     if (insertEventsErr) {
       return NextResponse.json(

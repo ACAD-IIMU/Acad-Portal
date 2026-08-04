@@ -240,14 +240,36 @@ function parseTimeRangeLabel(headerText: string): { startTime: string; endTime: 
   return { startTime: toHHMM(startMin), endTime: toHHMM(endMin) };
 }
 
-export async function parseTimetableWorkbook(buffer: Buffer): Promise<{
+/** Normalizes a sheet/term name for comparison — strips everything except letters and
+ * digits and lowercases, so "Term-IV", "Term IV", and "term_iv" all match the same way.
+ * Needed because tabs in this workbook aren't consistently named ("Term-IV" uses a
+ * hyphen, the newer "Term V" tab uses a space). */
+function normalizeSheetName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string): Promise<{
   sessions: ParsedSession[];
   unmapped: UnmappedEntry[];
   skippedStrikethrough: UnmappedEntry[];
 }> {
   // cellStyles + cellHTML needed to inspect strikethrough runs on individual cells
   const wb = XLSX.read(buffer, { type: "buffer", cellStyles: true, cellHTML: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
+
+  // Picks the sheet by NAME matching targetTerm — not wb.SheetNames[0]. Reading by
+  // position silently broke when a new "Term V" tab got added ahead of "Term-IV" in
+  // the tab order: it started reading Term V's calendar (which also uses a different,
+  // incompatible cell type for its Month column) while still labeling everything it
+  // found as "Term IV" in the database. Failing loudly here if no match is found is
+  // deliberate — silently falling back to position 0 is exactly the bug this fixes.
+  const normalizedTarget = normalizeSheetName(targetTerm);
+  const matchedSheetName = wb.SheetNames.find((n) => normalizeSheetName(n) === normalizedTarget);
+  if (!matchedSheetName) {
+    throw new Error(
+      `No sheet matching term "${targetTerm}" found. Available sheets: ${wb.SheetNames.join(", ")}`
+    );
+  }
+  const ws = wb.Sheets[matchedSheetName];
   const range = XLSX.utils.decode_range(ws["!ref"]!);
 
   // Verified separately (see strikethroughMap.ts) — xlsx/exceljs cannot reliably tell struck
