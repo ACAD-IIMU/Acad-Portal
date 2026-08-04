@@ -11,6 +11,12 @@
 const CURRENT_TERM = 'Term IV';
 const BIDDING_TERM = 'Term V'; // the term being bid FOR — one ahead of CURRENT_TERM
 
+// Temporary — set back to false to restore real data for everyone. While
+// true, every student sees a static 0/1000 "will be updated shortly" view
+// regardless of their actual data (or lack of it), skipping all DB queries
+// entirely so this can't break due to any student's individual data state.
+const EAP_SECTION_DISABLED = true;
+
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 import CourseWorkshopsRow from '@/components/CourseWorkshopsRow';
@@ -117,6 +123,62 @@ const ALL_ELECTIVES = [
 ];
 
 export default async function EapPointsPage() {
+  if (EAP_SECTION_DISABLED) {
+    const staticRows: ComponentRow[] = [
+      { label: 'Fixed', value: 0, max: 250 },
+      { label: 'Flexi Core', value: 0, max: 150 },
+      { label: 'Stream Workshop', value: 0, max: 90 },
+      { label: 'Course Workshops', value: 0, max: 210 },
+      { label: 'DER Round 1', value: 0, max: 50 },
+      { label: 'DER Round 2', value: 0, max: 100 },
+      { label: 'Mock Bidding', value: 0, max: 30 },
+      { label: 'Forms by ACAD', value: 0, max: 20 },
+      { label: 'CGPA Component', value: 0, max: 80 },
+      { label: 'Subject Representative', value: 0, max: 20 },
+      { label: 'Flexi-Core Batch Meet', value: 0, max: null, isPenalty: true },
+      { label: 'EAP Batch Meet', value: 0, max: null, isPenalty: true },
+      { label: 'Preliminary Yearly Survey', value: 0, max: null, isPenalty: true },
+    ];
+
+    return (
+      <Shell>
+        <div className="rounded-card p-8 mb-5 flex items-center justify-between gap-6 flex-wrap text-white bg-[linear-gradient(120deg,#2a0f16,#7a2331_55%,#702c4e)]">
+          <div>
+            <div className="font-display text-4xl font-semibold leading-none">
+              0<span className="text-lg opacity-65 font-medium"> / 1000</span>
+            </div>
+            <div className="text-xs uppercase tracking-wide mt-1.5 text-brand-100">
+              EAP Bid Points — will be updated shortly
+            </div>
+          </div>
+        </div>
+
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-3.5">
+            <h2 className="text-base">Component breakdown</h2>
+          </div>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className="text-left text-xs uppercase tracking-wide text-inkFaint font-semibold pb-2.5 border-b border-line">
+                  Component
+                </th>
+                <th className="text-right text-xs uppercase tracking-wide text-inkFaint font-semibold pb-2.5 border-b border-line">
+                  Score
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {staticRows.map((row) => (
+                <PlainRow key={row.label} row={row} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Shell>
+    );
+  }
+
   const supabase = createClient();
 
   const {
