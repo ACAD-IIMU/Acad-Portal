@@ -1,0 +1,3654 @@
+{
+  "term": "Term V",
+  "sessions": [
+    {
+      "id": 1,
+      "label": "9:00–10:30 am",
+      "slot_key": "s1"
+    },
+    {
+      "id": 2,
+      "label": "10:45–12:15 pm",
+      "slot_key": "s2"
+    },
+    {
+      "id": 3,
+      "label": "12:30–2:00 pm",
+      "slot_key": "s3"
+    },
+    {
+      "id": 4,
+      "label": "3:00–4:30 pm",
+      "slot_key": "s4"
+    },
+    {
+      "id": 5,
+      "label": "4:45–6:15 pm",
+      "slot_key": "s5"
+    },
+    {
+      "id": 6,
+      "label": "6:45–8:15 pm",
+      "slot_key": "s6"
+    }
+  ],
+  "courses": {
+    "ASSAM": {
+      "name": "Advanced Selling Skills and Management",
+      "credits": 4,
+      "instructor": "Prof. Gokul Kamath"
+    },
+    "AMIMC": {
+      "name": "Advertising Management & Integrated Marketing Communication",
+      "credits": 4,
+      "instructor": "Prof. Arundhati Bhattacharyya"
+    },
+    "BAAI": {
+      "name": "Business Applications of Artificial Intelligence",
+      "credits": 4,
+      "instructor": "Prof. Probal Majumdar (S1-S3, S8-S12, S19&S20) & Prof. Prantosh Banerjee (S4-S7, S13-S18, S19&S20)"
+    },
+    "CTO": {
+      "name": "Competing through Operations",
+      "credits": 4,
+      "instructor": "Prof. Rahul Pandey"
+    },
+    "CPM": {
+      "name": "Contemporary Project Management",
+      "credits": 4,
+      "instructor": "Prof. Samir Biswas"
+    },
+    "CME (A)": {
+      "name": "Crafting Meaningful Experiences",
+      "credits": 2,
+      "instructor": "Prof. Amogh Kumbargeri"
+    },
+    "CME (B)": {
+      "name": "Crafting Meaningful Experiences",
+      "credits": 2,
+      "instructor": "Prof. Amogh Kumbargeri"
+    },
+    "CRM (A)": {
+      "name": "Customer Relationship Management",
+      "credits": 4,
+      "instructor": "Prof. Nageshwar Rao"
+    },
+    "CRM (B)": {
+      "name": "Customer Relationship Management",
+      "credits": 4,
+      "instructor": "Prof. Nageshwar Rao"
+    },
+    "FRM": {
+      "name": "Financial Risk Management",
+      "credits": 2,
+      "instructor": "Prof. Deep Narayan Mukherjee"
+    },
+    "FINTECH (A)": {
+      "name": "FINTECH",
+      "credits": 4,
+      "instructor": "Prof. Praloy Majumder (S1-S8) & Prof. Soumya Dasgupta (S9-S20)"
+    },
+    "FINTECH (B)": {
+      "name": "FINTECH",
+      "credits": 4,
+      "instructor": "Prof. Praloy Majumder (S1-S8) & Prof. Soumya Dasgupta (S9-S20)"
+    },
+    "FT&IT": {
+      "name": "Foreign Trade and Indirect Tax",
+      "credits": 2,
+      "instructor": "Prof. S Shanker and Prof. L Sridhar"
+    },
+    "IM": {
+      "name": "Innovation Management",
+      "credits": 4,
+      "instructor": "Prof. Jijo Mathew"
+    },
+    "IMC": {
+      "name": "Introduction to Management Consulting - A practitioner's approach to solving client problems",
+      "credits": 4,
+      "instructor": "Prof. Arun CR"
+    },
+    "MC": {
+      "name": "Management Consulting",
+      "credits": 4,
+      "instructor": "Prof. D. Ashok"
+    },
+    "MSW": {
+      "name": "Marketing for Sustainable World",
+      "credits": 2,
+      "instructor": "Prof. Arundhati Bhattacharyya"
+    },
+    "MACR": {
+      "name": "Merger, Acquisition & Corporate Restructuring",
+      "credits": 4,
+      "instructor": "Prof. N Viswanathan"
+    },
+    "MSAIC (A)": {
+      "name": "Multi-Sectoral Analysis in Indian Context",
+      "credits": 2,
+      "instructor": "Prof. Venkat K."
+    },
+    "MSAIC (B)": {
+      "name": "Multi-Sectoral Analysis in Indian Context",
+      "credits": 2,
+      "instructor": "Prof. Venkat K."
+    },
+    "NGO": {
+      "name": "Negotiations",
+      "credits": 4,
+      "instructor": "Prof. Jay Uparna"
+    },
+    "ReM (A)": {
+      "name": "Retail Management",
+      "credits": 4,
+      "instructor": "Prof. K. Dasaratharaman (S1-S10) & Prof. Venkat K. (S11-S20)"
+    },
+    "ReM (B)": {
+      "name": "Retail Management",
+      "credits": 4,
+      "instructor": "Prof. K. Dasaratharaman (S1-S10) & Prof. Venkat K. (S11-S20)"
+    },
+    "RuM": {
+      "name": "Rural Marketing",
+      "credits": 2,
+      "instructor": "Prof. Sanal Kumar"
+    },
+    "SL": {
+      "name": "Strategic Leadership",
+      "credits": 2,
+      "instructor": "Prof. Shaleen Gopal"
+    },
+    "SDSCM": {
+      "name": "Strategic Digital Supply Chain Management",
+      "credits": 4,
+      "instructor": "Prof. Avijit Raychaudhuri"
+    },
+    "ToC": {
+      "name": "Theory of Constraint",
+      "credits": 2,
+      "instructor": "Prof. R Raghavendra Ravi"
+    }
+  },
+  "subject_sections": {
+    "Advanced Selling Skills and Management": [
+      "ASSAM"
+    ],
+    "Advertising Management & Integrated Marketing Communication": [
+      "AMIMC"
+    ],
+    "Business Applications of Artificial Intelligence": [
+      "BAAI"
+    ],
+    "Competing through Operations": [
+      "CTO"
+    ],
+    "Contemporary Project Management": [
+      "CPM"
+    ],
+    "Crafting Meaningful Experiences": [
+      "CME (A)",
+      "CME (B)"
+    ],
+    "Customer Relationship Management": [
+      "CRM (A)",
+      "CRM (B)"
+    ],
+    "Financial Risk Management": [
+      "FRM"
+    ],
+    "FINTECH": [
+      "FINTECH (A)",
+      "FINTECH (B)"
+    ],
+    "Foreign Trade and Indirect Tax": [
+      "FT&IT"
+    ],
+    "Innovation Management": [
+      "IM"
+    ],
+    "Introduction to Management Consulting - A practitioner's approach to solving client problems": [
+      "IMC"
+    ],
+    "Management Consulting": [
+      "MC"
+    ],
+    "Marketing for Sustainable World": [
+      "MSW"
+    ],
+    "Merger, Acquisition & Corporate Restructuring": [
+      "MACR"
+    ],
+    "Multi-Sectoral Analysis in Indian Context": [
+      "MSAIC (A)",
+      "MSAIC (B)"
+    ],
+    "Negotiations": [
+      "NGO"
+    ],
+    "Retail Management": [
+      "ReM (A)",
+      "ReM (B)"
+    ],
+    "Rural Marketing": [
+      "RuM"
+    ],
+    "Strategic Leadership": [
+      "SL"
+    ],
+    "Strategic Digital Supply Chain Management": [
+      "SDSCM"
+    ],
+    "Theory of Constraint": [
+      "ToC"
+    ]
+  },
+  "timetable": [
+    {
+      "date": "2026-09-13",
+      "date_num": 13,
+      "month": "Sep '26",
+      "week": "",
+      "day": "Sun",
+      "slots": {}
+    },
+    {
+      "date": "2026-09-14",
+      "date_num": 14,
+      "month": "Sep '26",
+      "week": "",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "IMC",
+            "session_num": 1
+          },
+          {
+            "code": "MSW",
+            "session_num": 1
+          }
+        ],
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 1
+          },
+          {
+            "code": "SDSCM",
+            "session_num": 1
+          }
+        ],
+        "s3": [
+          {
+            "code": "NGO",
+            "session_num": 2
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 1
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-15",
+      "date_num": 15,
+      "month": "Sep '26",
+      "week": "W-1",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 1
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 1
+          },
+          {
+            "code": "MACR",
+            "session_num": 1
+          }
+        ],
+        "s4": [
+          {
+            "code": "SL",
+            "session_num": 1
+          }
+        ],
+        "s6": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 1
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-16",
+      "date_num": 16,
+      "month": "Sep '26",
+      "week": "W-1",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 1
+          },
+          {
+            "code": "IMC",
+            "session_num": 2
+          },
+          {
+            "code": "MSW",
+            "session_num": 2
+          }
+        ],
+        "s2": [
+          {
+            "code": "SDSCM",
+            "session_num": 2
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 1
+          },
+          {
+            "code": "CME (B)",
+            "session_num": 1
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 2
+          }
+        ],
+        "s5": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 1
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-17",
+      "date_num": 17,
+      "month": "Sep '26",
+      "week": "W-1",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 2
+          },
+          {
+            "code": "IM",
+            "session_num": 2
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 2
+          },
+          {
+            "code": "MACR",
+            "session_num": 2
+          }
+        ],
+        "s3": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 2
+          }
+        ],
+        "s4": [
+          {
+            "code": "SL",
+            "session_num": 2
+          }
+        ],
+        "s5": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 3
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-18",
+      "date_num": 18,
+      "month": "Sep '26",
+      "week": "W-1",
+      "day": "Fri",
+      "slots": {
+        "s1": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 3
+          }
+        ],
+        "s2": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 4
+          }
+        ],
+        "s3": [
+          {
+            "code": "IMC",
+            "session_num": 0
+          }
+        ],
+        "s4": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 4
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (A)",
+            "session_num": 1
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 1
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (A)",
+            "session_num": 2
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 2
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-19",
+      "date_num": 19,
+      "month": "Sep '26",
+      "week": "W-1",
+      "day": "Sat",
+      "slots": {
+        "s1": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 5
+          }
+        ],
+        "s2": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 5
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 2
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (B)",
+            "session_num": 1
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 1
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (B)",
+            "session_num": 2
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 2
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-20",
+      "date_num": 20,
+      "month": "Sep '26",
+      "week": "W-1",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "CRM (A)",
+            "session_num": 3
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 3
+          }
+        ],
+        "s2": [
+          {
+            "code": "CRM (B)",
+            "session_num": 3
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 3
+          }
+        ],
+        "s3": [
+          {
+            "code": "IMC",
+            "session_num": 3
+          }
+        ],
+        "s4": [
+          {
+            "code": "CRM (A)",
+            "session_num": 4
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (B)",
+            "session_num": 4
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-21",
+      "date_num": 21,
+      "month": "Sep '26",
+      "week": "W-1",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 2
+          },
+          {
+            "code": "IMC",
+            "session_num": 4
+          },
+          {
+            "code": "MSW",
+            "session_num": 3
+          }
+        ],
+        "s2": [
+          {
+            "code": "IMC",
+            "session_num": 5
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 3
+          },
+          {
+            "code": "CME (B)",
+            "session_num": 2
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 3
+          }
+        ],
+        "s5": [
+          {
+            "code": "SDSCM",
+            "session_num": 3
+          }
+        ],
+        "s6": [
+          {
+            "code": "BAAI",
+            "session_num": 4
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-22",
+      "date_num": 22,
+      "month": "Sep '26",
+      "week": "W-2",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 3
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 3
+          },
+          {
+            "code": "MACR",
+            "session_num": 3
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 5
+          }
+        ],
+        "s4": [
+          {
+            "code": "SL",
+            "session_num": 3
+          }
+        ],
+        "s5": [
+          {
+            "code": "BAAI",
+            "session_num": 6
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-23",
+      "date_num": 23,
+      "month": "Sep '26",
+      "week": "W-2",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 3
+          },
+          {
+            "code": "IMC",
+            "session_num": 6
+          },
+          {
+            "code": "MSW",
+            "session_num": 4
+          }
+        ],
+        "s2": [
+          {
+            "code": "SDSCM",
+            "session_num": 4
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 7
+          },
+          {
+            "code": "CME (B)",
+            "session_num": 3
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 4
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-24",
+      "date_num": 24,
+      "month": "Sep '26",
+      "week": "W-2",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 4
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 4
+          },
+          {
+            "code": "MACR",
+            "session_num": 4
+          }
+        ],
+        "s3": [
+          {
+            "code": "ASSAM",
+            "session_num": 1
+          }
+        ],
+        "s4": [
+          {
+            "code": "FT&IT",
+            "session_num": 1
+          },
+          {
+            "code": "SL",
+            "session_num": 4
+          }
+        ],
+        "s5": [
+          {
+            "code": "FT&IT",
+            "session_num": 2
+          }
+        ],
+        "s6": [
+          {
+            "code": "ASSAM",
+            "session_num": 2
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-25",
+      "date_num": 25,
+      "month": "Sep '26",
+      "week": "W-2",
+      "day": "Fri",
+      "slots": {
+        "s1": [
+          {
+            "code": "FT&IT",
+            "session_num": 3
+          }
+        ],
+        "s2": [
+          {
+            "code": "FT&IT",
+            "session_num": 4
+          }
+        ],
+        "s3": [
+          {
+            "code": "IMC",
+            "session_num": 0
+          }
+        ],
+        "s4": [
+          {
+            "code": "ASSAM",
+            "session_num": 3
+          }
+        ],
+        "s5": [
+          {
+            "code": "FINTECH (A)",
+            "session_num": 4
+          }
+        ],
+        "s6": [
+          {
+            "code": "FINTECH (A)",
+            "session_num": 5
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-26",
+      "date_num": 26,
+      "month": "Sep '26",
+      "week": "W-2",
+      "day": "Sat",
+      "slots": {
+        "s2": [
+          {
+            "code": "FINTECH (B)",
+            "session_num": 4
+          }
+        ],
+        "s3": [
+          {
+            "code": "FINTECH (B)",
+            "session_num": 5
+          }
+        ],
+        "s4": [
+          {
+            "code": "ASSAM",
+            "session_num": 4
+          }
+        ],
+        "s5": [
+          {
+            "code": "ASSAM",
+            "session_num": 5
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-27",
+      "date_num": 27,
+      "month": "Sep '26",
+      "week": "W-2",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "FINTECH (A)",
+            "session_num": 6
+          }
+        ],
+        "s2": [
+          {
+            "code": "FINTECH (B)",
+            "session_num": 6
+          }
+        ],
+        "s3": [
+          {
+            "code": "ReM (A)",
+            "session_num": 1
+          }
+        ],
+        "s6": [
+          {
+            "code": "ReM (B)",
+            "session_num": 1
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-28",
+      "date_num": 28,
+      "month": "Sep '26",
+      "week": "W-2",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 4
+          },
+          {
+            "code": "IMC",
+            "session_num": 7
+          },
+          {
+            "code": "MSW",
+            "session_num": 5
+          }
+        ],
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 3
+          },
+          {
+            "code": "SDSCM",
+            "session_num": 5
+          }
+        ],
+        "s3": [
+          {
+            "code": "CME (B)",
+            "session_num": 4
+          },
+          {
+            "code": "NGO",
+            "session_num": 4
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 5
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (B)",
+            "session_num": 2
+          }
+        ],
+        "s6": [
+          {
+            "code": "ReM (A)",
+            "session_num": 2
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-29",
+      "date_num": 29,
+      "month": "Sep '26",
+      "week": "W-3",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 6
+          },
+          {
+            "code": "IM",
+            "session_num": 5
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 5
+          },
+          {
+            "code": "MACR",
+            "session_num": 5
+          }
+        ],
+        "s3": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 6
+          }
+        ],
+        "s4": [
+          {
+            "code": "SL",
+            "session_num": 5
+          }
+        ],
+        "s5": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 7
+          },
+          {
+            "code": "ReM (B)",
+            "session_num": 3
+          }
+        ],
+        "s6": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 7
+          },
+          {
+            "code": "ReM (A)",
+            "session_num": 3
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-09-30",
+      "date_num": 30,
+      "month": "Sep '26",
+      "week": "W-3",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 5
+          },
+          {
+            "code": "IMC",
+            "session_num": 8
+          },
+          {
+            "code": "MSW",
+            "session_num": 6
+          }
+        ],
+        "s2": [
+          {
+            "code": "SDSCM",
+            "session_num": 6
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 8
+          },
+          {
+            "code": "CME (B)",
+            "session_num": 5
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 6
+          }
+        ],
+        "s5": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 8
+          },
+          {
+            "code": "ReM (B)",
+            "session_num": 4
+          }
+        ],
+        "s6": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 8
+          },
+          {
+            "code": "ReM (A)",
+            "session_num": 4
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-01",
+      "date_num": 1,
+      "month": "Oct '26",
+      "week": "W-3",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 9
+          },
+          {
+            "code": "IM",
+            "session_num": 6
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 6
+          },
+          {
+            "code": "MACR",
+            "session_num": 6
+          }
+        ],
+        "s3": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 9
+          },
+          {
+            "code": "IMC",
+            "session_num": 0
+          }
+        ],
+        "s4": [
+          {
+            "code": "SL",
+            "session_num": 6
+          }
+        ],
+        "s5": [
+          {
+            "code": "MSAIC (A)",
+            "session_num": 10
+          },
+          {
+            "code": "ReM (A)",
+            "session_num": 5
+          }
+        ],
+        "s6": [
+          {
+            "code": "MSAIC (B)",
+            "session_num": 10
+          },
+          {
+            "code": "ReM (B)",
+            "session_num": 5
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-02",
+      "date_num": 2,
+      "month": "Oct '26",
+      "week": "W-3",
+      "day": "Fri",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-03",
+      "date_num": 3,
+      "month": "Oct '26",
+      "week": "W-3",
+      "day": "Sat",
+      "slots": {
+        "s1": [
+          {
+            "code": "CRM (A)",
+            "session_num": 5
+          }
+        ],
+        "s2": [
+          {
+            "code": "CRM (B)",
+            "session_num": 5
+          },
+          {
+            "code": "CTO",
+            "session_num": 1
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 9
+          }
+        ],
+        "s4": [
+          {
+            "code": "CRM (B)",
+            "session_num": 6
+          },
+          {
+            "code": "CTO",
+            "session_num": 2
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (A)",
+            "session_num": 6
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 7
+          }
+        ],
+        "s6": [
+          {
+            "code": "FINTECH (A)",
+            "session_num": 8
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-04",
+      "date_num": 4,
+      "month": "Oct '26",
+      "week": "W-3",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "CRM (A)",
+            "session_num": 7
+          }
+        ],
+        "s2": [
+          {
+            "code": "CRM (B)",
+            "session_num": 7
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 7
+          }
+        ],
+        "s3": [
+          {
+            "code": "FINTECH (B)",
+            "session_num": 8
+          }
+        ],
+        "s4": [
+          {
+            "code": "CTO",
+            "session_num": 3
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (B)",
+            "session_num": 8
+          },
+          {
+            "code": "CTO",
+            "session_num": 4
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (A)",
+            "session_num": 8
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-05",
+      "date_num": 5,
+      "month": "Oct '26",
+      "week": "W-3",
+      "day": "Mon",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-06",
+      "date_num": 6,
+      "month": "Oct '26",
+      "week": "W-4",
+      "day": "Tue",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-07",
+      "date_num": 7,
+      "month": "Oct '26",
+      "week": "W-4",
+      "day": "Wed",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-08",
+      "date_num": 8,
+      "month": "Oct '26",
+      "week": "W-4",
+      "day": "Thu",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-09",
+      "date_num": 9,
+      "month": "Oct '26",
+      "week": "W-4",
+      "day": "Fri",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-10",
+      "date_num": 10,
+      "month": "Oct '26",
+      "week": "W-4",
+      "day": "Sat",
+      "slots": {
+        "s1": [
+          {
+            "code": "MSW",
+            "session_num": 7
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 10
+          }
+        ],
+        "s6": [
+          {
+            "code": "RuM",
+            "session_num": 1
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-11",
+      "date_num": 11,
+      "month": "Oct '26",
+      "week": "W-4",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "MSW",
+            "session_num": 8
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 11
+          }
+        ],
+        "s4": [
+          {
+            "code": "RuM",
+            "session_num": 2
+          }
+        ],
+        "s5": [
+          {
+            "code": "RuM",
+            "session_num": 3
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-12",
+      "date_num": 12,
+      "month": "Oct '26",
+      "week": "W-4",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 6
+          },
+          {
+            "code": "IMC",
+            "session_num": 9
+          },
+          {
+            "code": "MSW",
+            "session_num": 9
+          }
+        ],
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 7
+          },
+          {
+            "code": "SDSCM",
+            "session_num": 7
+          }
+        ],
+        "s3": [
+          {
+            "code": "CME (B)",
+            "session_num": 6
+          },
+          {
+            "code": "NGO",
+            "session_num": 8
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 7
+          }
+        ],
+        "s5": [
+          {
+            "code": "RuM",
+            "session_num": 4
+          }
+        ],
+        "s6": [
+          {
+            "code": "RuM",
+            "session_num": 5
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-13",
+      "date_num": 13,
+      "month": "Oct '26",
+      "week": "W-5",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 7
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 7
+          },
+          {
+            "code": "MACR",
+            "session_num": 7
+          }
+        ],
+        "s3": [
+          {
+            "code": "ASSAM",
+            "session_num": 6
+          }
+        ],
+        "s4": [
+          {
+            "code": "FT&IT",
+            "session_num": 5
+          },
+          {
+            "code": "SL",
+            "session_num": 7
+          }
+        ],
+        "s5": [
+          {
+            "code": "FINTECH (A)",
+            "session_num": 9
+          }
+        ],
+        "s6": [
+          {
+            "code": "FINTECH (A)",
+            "session_num": 10
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-14",
+      "date_num": 14,
+      "month": "Oct '26",
+      "week": "W-5",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 7
+          },
+          {
+            "code": "IMC",
+            "session_num": 10
+          },
+          {
+            "code": "MSW",
+            "session_num": 10
+          }
+        ],
+        "s2": [
+          {
+            "code": "SDSCM",
+            "session_num": 8
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 12
+          },
+          {
+            "code": "CME (B)",
+            "session_num": 7
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 8
+          }
+        ],
+        "s5": [
+          {
+            "code": "FINTECH (B)",
+            "session_num": 9
+          },
+          {
+            "code": "ToC",
+            "session_num": 1
+          }
+        ],
+        "s6": [
+          {
+            "code": "FINTECH (B)",
+            "session_num": 10
+          },
+          {
+            "code": "ToC",
+            "session_num": 2
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-15",
+      "date_num": 15,
+      "month": "Oct '26",
+      "week": "W-5",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 8
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 8
+          },
+          {
+            "code": "MACR",
+            "session_num": 8
+          }
+        ],
+        "s3": [
+          {
+            "code": "ASSAM",
+            "session_num": 7
+          }
+        ],
+        "s4": [
+          {
+            "code": "FT&IT",
+            "session_num": 6
+          },
+          {
+            "code": "SL",
+            "session_num": 8
+          }
+        ],
+        "s5": [
+          {
+            "code": "FINTECH (B)",
+            "session_num": 11
+          },
+          {
+            "code": "ToC",
+            "session_num": 3
+          }
+        ],
+        "s6": [
+          {
+            "code": "MC",
+            "session_num": 1
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-16",
+      "date_num": 16,
+      "month": "Oct '26",
+      "week": "W-5",
+      "day": "Fri",
+      "slots": {
+        "s1": [
+          {
+            "code": "FINTECH (A)",
+            "session_num": 11
+          }
+        ],
+        "s2": [
+          {
+            "code": "FT&IT",
+            "session_num": 7
+          }
+        ],
+        "s3": [
+          {
+            "code": "ToC",
+            "session_num": 4
+          }
+        ],
+        "s4": [
+          {
+            "code": "ToC",
+            "session_num": 5
+          }
+        ],
+        "s5": [
+          {
+            "code": "FINTECH (A)",
+            "session_num": 12
+          }
+        ],
+        "s6": [
+          {
+            "code": "FINTECH (B)",
+            "session_num": 12
+          },
+          {
+            "code": "MC",
+            "session_num": 2
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-17",
+      "date_num": 17,
+      "month": "Oct '26",
+      "week": "W-5",
+      "day": "Sat",
+      "slots": {
+        "s3": [
+          {
+            "code": "MC",
+            "session_num": 3
+          }
+        ],
+        "s4": [
+          {
+            "code": "MC",
+            "session_num": 4
+          }
+        ],
+        "s5": [
+          {
+            "code": "ASSAM",
+            "session_num": 8
+          }
+        ],
+        "s6": [
+          {
+            "code": "ASSAM",
+            "session_num": 9
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-18",
+      "date_num": 18,
+      "month": "Oct '26",
+      "week": "W-5",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "MC",
+            "session_num": 5
+          }
+        ],
+        "s2": [
+          {
+            "code": "FT&IT",
+            "session_num": 8
+          }
+        ],
+        "s4": [
+          {
+            "code": "ASSAM",
+            "session_num": 10
+          }
+        ],
+        "s5": [
+          {
+            "code": "ASSAM",
+            "session_num": 11
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-19",
+      "date_num": 19,
+      "month": "Oct '26",
+      "week": "W-5",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 8
+          },
+          {
+            "code": "IMC",
+            "session_num": 11
+          }
+        ],
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 9
+          }
+        ],
+        "s3": [
+          {
+            "code": "CME (B)",
+            "session_num": 8
+          },
+          {
+            "code": "NGO",
+            "session_num": 10
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 9
+          }
+        ],
+        "s5": [
+          {
+            "code": "FT&IT",
+            "session_num": 9
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-20",
+      "date_num": 20,
+      "month": "Oct '26",
+      "week": "W-6",
+      "day": "Tue",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-21",
+      "date_num": 21,
+      "month": "Oct '26",
+      "week": "W-6",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 9
+          },
+          {
+            "code": "IMC",
+            "session_num": 12
+          }
+        ],
+        "s3": [
+          {
+            "code": "CME (B)",
+            "session_num": 9
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 10
+          }
+        ],
+        "s5": [
+          {
+            "code": "RuM",
+            "session_num": 6
+          }
+        ],
+        "s6": [
+          {
+            "code": "RuM",
+            "session_num": 7
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-22",
+      "date_num": 22,
+      "month": "Oct '26",
+      "week": "W-6",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 9
+          }
+        ],
+        "s2": [
+          {
+            "code": "MACR",
+            "session_num": 9
+          }
+        ],
+        "s4": [
+          {
+            "code": "FT&IT",
+            "session_num": 10
+          },
+          {
+            "code": "SL",
+            "session_num": 9
+          }
+        ],
+        "s5": [
+          {
+            "code": "RuM",
+            "session_num": 8
+          }
+        ],
+        "s6": [
+          {
+            "code": "RuM",
+            "session_num": 9
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-23",
+      "date_num": 23,
+      "month": "Oct '26",
+      "week": "W-6",
+      "day": "Fri",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 10
+          }
+        ],
+        "s2": [
+          {
+            "code": "MACR",
+            "session_num": 10
+          }
+        ],
+        "s3": [
+          {
+            "code": "RuM",
+            "session_num": 10
+          }
+        ],
+        "s4": [
+          {
+            "code": "FT&IT",
+            "session_num": 0
+          },
+          {
+            "code": "SL",
+            "session_num": 10
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-24",
+      "date_num": 24,
+      "month": "Oct '26",
+      "week": "W-6",
+      "day": "Sat",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-25",
+      "date_num": 25,
+      "month": "Oct '26",
+      "week": "W-6",
+      "day": "Sun",
+      "slots": {}
+    },
+    {
+      "date": "2026-10-26",
+      "date_num": 26,
+      "month": "Oct '26",
+      "week": "W-6",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "CME (A)",
+            "session_num": 10
+          },
+          {
+            "code": "IMC",
+            "session_num": 13
+          }
+        ],
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 11
+          },
+          {
+            "code": "SDSCM",
+            "session_num": 9
+          }
+        ],
+        "s3": [
+          {
+            "code": "CME (B)",
+            "session_num": 10
+          },
+          {
+            "code": "NGO",
+            "session_num": 12
+          }
+        ],
+        "s4": [
+          {
+            "code": "ASSAM",
+            "session_num": 12
+          },
+          {
+            "code": "CTO",
+            "session_num": 5
+          }
+        ],
+        "s5": [
+          {
+            "code": "ASSAM",
+            "session_num": 13
+          },
+          {
+            "code": "CTO",
+            "session_num": 6
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-27",
+      "date_num": 27,
+      "month": "Oct '26",
+      "week": "W-7",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 11
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 9
+          }
+        ],
+        "s3": [
+          {
+            "code": "CTO",
+            "session_num": 7
+          }
+        ],
+        "s4": [
+          {
+            "code": "ASSAM",
+            "session_num": 14
+          },
+          {
+            "code": "CTO",
+            "session_num": 8
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (B)",
+            "session_num": 9
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 13
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (A)",
+            "session_num": 9
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 13
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-28",
+      "date_num": 28,
+      "month": "Oct '26",
+      "week": "W-7",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "IMC",
+            "session_num": 14
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 10
+          }
+        ],
+        "s3": [
+          {
+            "code": "SDSCM",
+            "session_num": 10
+          }
+        ],
+        "s4": [
+          {
+            "code": "ASSAM",
+            "session_num": 15
+          },
+          {
+            "code": "CTO",
+            "session_num": 9
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (A)",
+            "session_num": 10
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 14
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (B)",
+            "session_num": 10
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 14
+          },
+          {
+            "code": "MC",
+            "session_num": 6
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-29",
+      "date_num": 29,
+      "month": "Oct '26",
+      "week": "W-7",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 12
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (A)",
+            "session_num": 11
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 15
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (B)",
+            "session_num": 11
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 15
+          },
+          {
+            "code": "MC",
+            "session_num": 7
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-30",
+      "date_num": 30,
+      "month": "Oct '26",
+      "week": "W-7",
+      "day": "Fri",
+      "slots": {
+        "s6": [
+          {
+            "code": "MC",
+            "session_num": 8
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-10-31",
+      "date_num": 31,
+      "month": "Oct '26",
+      "week": "W-7",
+      "day": "Sat",
+      "slots": {
+        "s6": [
+          {
+            "code": "MC",
+            "session_num": 9
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-01",
+      "date_num": 1,
+      "month": "Nov '26",
+      "week": "W-7",
+      "day": "Sun",
+      "slots": {
+        "s6": [
+          {
+            "code": "MC",
+            "session_num": 10
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-02",
+      "date_num": 2,
+      "month": "Nov '26",
+      "week": "W-7",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "IMC",
+            "session_num": 15
+          }
+        ],
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 13
+          },
+          {
+            "code": "SDSCM",
+            "session_num": 11
+          }
+        ],
+        "s3": [
+          {
+            "code": "NGO",
+            "session_num": 14
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 11
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (A)",
+            "session_num": 6
+          }
+        ],
+        "s6": [
+          {
+            "code": "ReM (B)",
+            "session_num": 6
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-03",
+      "date_num": 3,
+      "month": "Nov '26",
+      "week": "W-8",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 13
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 11
+          },
+          {
+            "code": "MACR",
+            "session_num": 11
+          }
+        ],
+        "s3": [
+          {
+            "code": "ReM (B)",
+            "session_num": 7
+          }
+        ],
+        "s4": [
+          {
+            "code": "ReM (A)",
+            "session_num": 7
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-04",
+      "date_num": 4,
+      "month": "Nov '26",
+      "week": "W-8",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "IMC",
+            "session_num": 16
+          }
+        ],
+        "s2": [
+          {
+            "code": "SDSCM",
+            "session_num": 12
+          }
+        ],
+        "s3": [
+          {
+            "code": "ReM (A)",
+            "session_num": 8
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 12
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (B)",
+            "session_num": 8
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-05",
+      "date_num": 5,
+      "month": "Nov '26",
+      "week": "W-8",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 14
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 12
+          },
+          {
+            "code": "MACR",
+            "session_num": 12
+          }
+        ],
+        "s3": [
+          {
+            "code": "BAAI",
+            "session_num": 13
+          }
+        ],
+        "s4": [
+          {
+            "code": "BAAI",
+            "session_num": 14
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (B)",
+            "session_num": 9
+          }
+        ],
+        "s6": [
+          {
+            "code": "ReM (A)",
+            "session_num": 9
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-06",
+      "date_num": 6,
+      "month": "Nov '26",
+      "week": "W-8",
+      "day": "Fri",
+      "slots": {
+        "s1": [
+          {
+            "code": "BAAI",
+            "session_num": 15
+          }
+        ],
+        "s2": [
+          {
+            "code": "BAAI",
+            "session_num": 16
+          }
+        ],
+        "s3": [
+          {
+            "code": "ReM (A)",
+            "session_num": 10
+          }
+        ],
+        "s4": [
+          {
+            "code": "ReM (B)",
+            "session_num": 10
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-07",
+      "date_num": 7,
+      "month": "Nov '26",
+      "week": "W-8",
+      "day": "Sat",
+      "slots": {}
+    },
+    {
+      "date": "2026-11-08",
+      "date_num": 8,
+      "month": "Nov '26",
+      "week": "W-8",
+      "day": "Sun",
+      "slots": {}
+    },
+    {
+      "date": "2026-11-09",
+      "date_num": 9,
+      "month": "Nov '26",
+      "week": "W-8",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "IMC",
+            "session_num": 17
+          }
+        ],
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 15
+          },
+          {
+            "code": "SDSCM",
+            "session_num": 13
+          }
+        ],
+        "s3": [
+          {
+            "code": "NGO",
+            "session_num": 16
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 13
+          }
+        ],
+        "s5": [
+          {
+            "code": "CTO",
+            "session_num": 9
+          }
+        ],
+        "s6": [
+          {
+            "code": "CTO",
+            "session_num": 10
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-10",
+      "date_num": 10,
+      "month": "Nov '26",
+      "week": "W-9",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "ReM (B)",
+            "session_num": 11
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 13
+          },
+          {
+            "code": "MACR",
+            "session_num": 13
+          }
+        ],
+        "s3": [
+          {
+            "code": "CTO",
+            "session_num": 11
+          }
+        ],
+        "s4": [
+          {
+            "code": "CTO",
+            "session_num": 12
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (A)",
+            "session_num": 11
+          }
+        ],
+        "s6": [
+          {
+            "code": "ReM (A)",
+            "session_num": 12
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-11",
+      "date_num": 11,
+      "month": "Nov '26",
+      "week": "W-9",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "IMC",
+            "session_num": 18
+          }
+        ],
+        "s2": [
+          {
+            "code": "SDSCM",
+            "session_num": 14
+          }
+        ],
+        "s3": [
+          {
+            "code": "CTO",
+            "session_num": 13
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 14
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (B)",
+            "session_num": 12
+          },
+          {
+            "code": "ToC",
+            "session_num": 6
+          }
+        ],
+        "s6": [
+          {
+            "code": "ReM (B)",
+            "session_num": 13
+          },
+          {
+            "code": "ToC",
+            "session_num": 7
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-12",
+      "date_num": 12,
+      "month": "Nov '26",
+      "week": "W-9",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "ReM (A)",
+            "session_num": 13
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 14
+          },
+          {
+            "code": "MACR",
+            "session_num": 14
+          }
+        ],
+        "s3": [
+          {
+            "code": "ReM (A)",
+            "session_num": 14
+          }
+        ],
+        "s4": [
+          {
+            "code": "ReM (B)",
+            "session_num": 14
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (A)",
+            "session_num": 12
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 16
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (B)",
+            "session_num": 12
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 16
+          },
+          {
+            "code": "MC",
+            "session_num": 11
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-13",
+      "date_num": 13,
+      "month": "Nov '26",
+      "week": "W-9",
+      "day": "Fri",
+      "slots": {
+        "s2": [
+          {
+            "code": "ToC",
+            "session_num": 8
+          }
+        ],
+        "s3": [
+          {
+            "code": "ToC",
+            "session_num": 9
+          }
+        ],
+        "s4": [
+          {
+            "code": "CRM (A)",
+            "session_num": 13
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 17
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (B)",
+            "session_num": 13
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 17
+          },
+          {
+            "code": "MC",
+            "session_num": 12
+          }
+        ],
+        "s6": [
+          {
+            "code": "MC",
+            "session_num": 13
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-14",
+      "date_num": 14,
+      "month": "Nov '26",
+      "week": "W-9",
+      "day": "Sat",
+      "slots": {
+        "s1": [
+          {
+            "code": "CRM (B)",
+            "session_num": 14
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 18
+          }
+        ],
+        "s2": [
+          {
+            "code": "CRM (A)",
+            "session_num": 14
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 18
+          }
+        ],
+        "s3": [
+          {
+            "code": "MC",
+            "session_num": 14
+          }
+        ],
+        "s4": [
+          {
+            "code": "CRM (B)",
+            "session_num": 15
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 19
+          },
+          {
+            "code": "MC",
+            "session_num": 15
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (A)",
+            "session_num": 15
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 19
+          }
+        ],
+        "s6": [
+          {
+            "code": "ToC",
+            "session_num": 10
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-15",
+      "date_num": 15,
+      "month": "Nov '26",
+      "week": "W-9",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "CRM (B)",
+            "session_num": 16
+          },
+          {
+            "code": "FINTECH (B)",
+            "session_num": 20
+          }
+        ],
+        "s2": [
+          {
+            "code": "CRM (A)",
+            "session_num": 16
+          },
+          {
+            "code": "FINTECH (A)",
+            "session_num": 20
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-16",
+      "date_num": 16,
+      "month": "Nov '26",
+      "week": "W-9",
+      "day": "Mon",
+      "slots": {}
+    },
+    {
+      "date": "2026-11-17",
+      "date_num": 17,
+      "month": "Nov '26",
+      "week": "W-10",
+      "day": "Tue",
+      "slots": {}
+    },
+    {
+      "date": "2026-11-18",
+      "date_num": 18,
+      "month": "Nov '26",
+      "week": "W-10",
+      "day": "Wed",
+      "slots": {}
+    },
+    {
+      "date": "2026-11-19",
+      "date_num": 19,
+      "month": "Nov '26",
+      "week": "W-10",
+      "day": "Thu",
+      "slots": {}
+    },
+    {
+      "date": "2026-11-20",
+      "date_num": 20,
+      "month": "Nov '26",
+      "week": "W-10",
+      "day": "Fri",
+      "slots": {}
+    },
+    {
+      "date": "2026-11-21",
+      "date_num": 21,
+      "month": "Nov '26",
+      "week": "W-10",
+      "day": "Sat",
+      "slots": {
+        "s1": [
+          {
+            "code": "BAAI",
+            "session_num": 17
+          }
+        ],
+        "s2": [
+          {
+            "code": "BAAI",
+            "session_num": 18
+          }
+        ],
+        "s4": [
+          {
+            "code": "CRM (A)",
+            "session_num": 17
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (B)",
+            "session_num": 17
+          },
+          {
+            "code": "MC",
+            "session_num": 16
+          }
+        ],
+        "s6": [
+          {
+            "code": "MC",
+            "session_num": 17
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-22",
+      "date_num": 22,
+      "month": "Nov '26",
+      "week": "W-10",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "BAAI",
+            "session_num": 19
+          }
+        ],
+        "s2": [
+          {
+            "code": "BAAI",
+            "session_num": 20
+          }
+        ],
+        "s4": [
+          {
+            "code": "CRM (A)",
+            "session_num": 18
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (B)",
+            "session_num": 18
+          },
+          {
+            "code": "MC",
+            "session_num": 18
+          }
+        ],
+        "s6": [
+          {
+            "code": "MC",
+            "session_num": 19
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-23",
+      "date_num": 23,
+      "month": "Nov '26",
+      "week": "W-10",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "ASSAM",
+            "session_num": 16
+          }
+        ],
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 17
+          },
+          {
+            "code": "SDSCM",
+            "session_num": 15
+          }
+        ],
+        "s3": [
+          {
+            "code": "NGO",
+            "session_num": 18
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 15
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (A)",
+            "session_num": 19
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (B)",
+            "session_num": 19
+          },
+          {
+            "code": "MC",
+            "session_num": 20
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-24",
+      "date_num": 24,
+      "month": "Nov '26",
+      "week": "W-11",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 15
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 15
+          },
+          {
+            "code": "MACR",
+            "session_num": 15
+          }
+        ],
+        "s3": [
+          {
+            "code": "ReM (A)",
+            "session_num": 15
+          }
+        ],
+        "s4": [
+          {
+            "code": "ReM (A)",
+            "session_num": 16
+          }
+        ],
+        "s5": [
+          {
+            "code": "CRM (A)",
+            "session_num": 20
+          }
+        ],
+        "s6": [
+          {
+            "code": "CRM (B)",
+            "session_num": 20
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-25",
+      "date_num": 25,
+      "month": "Nov '26",
+      "week": "W-11",
+      "day": "Wed",
+      "slots": {
+        "s1": [
+          {
+            "code": "IMC",
+            "session_num": 19
+          }
+        ],
+        "s2": [
+          {
+            "code": "IMC",
+            "session_num": 20
+          }
+        ],
+        "s3": [
+          {
+            "code": "SDSCM",
+            "session_num": 16
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 16
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (B)",
+            "session_num": 15
+          }
+        ],
+        "s6": [
+          {
+            "code": "ReM (B)",
+            "session_num": 16
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-26",
+      "date_num": 26,
+      "month": "Nov '26",
+      "week": "W-11",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 16
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 16
+          },
+          {
+            "code": "MACR",
+            "session_num": 16
+          }
+        ],
+        "s3": [
+          {
+            "code": "CTO",
+            "session_num": 15
+          }
+        ],
+        "s4": [
+          {
+            "code": "ASSAM",
+            "session_num": 17
+          },
+          {
+            "code": "CTO",
+            "session_num": 16
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (A)",
+            "session_num": 17
+          }
+        ],
+        "s6": [
+          {
+            "code": "ReM (A)",
+            "session_num": 18
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-27",
+      "date_num": 27,
+      "month": "Nov '26",
+      "week": "W-11",
+      "day": "Fri",
+      "slots": {
+        "s1": [
+          {
+            "code": "ReM (B)",
+            "session_num": 17
+          }
+        ],
+        "s2": [
+          {
+            "code": "ReM (B)",
+            "session_num": 18
+          }
+        ],
+        "s3": [
+          {
+            "code": "ASSAM",
+            "session_num": 18
+          },
+          {
+            "code": "CTO",
+            "session_num": 17
+          }
+        ],
+        "s4": [
+          {
+            "code": "ReM (A)",
+            "session_num": 19
+          }
+        ],
+        "s5": [
+          {
+            "code": "ReM (A)",
+            "session_num": 20
+          }
+        ],
+        "s6": [
+          {
+            "code": "ASSAM",
+            "session_num": 19
+          },
+          {
+            "code": "CTO",
+            "session_num": 18
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-28",
+      "date_num": 28,
+      "month": "Nov '26",
+      "week": "W-11",
+      "day": "Sat",
+      "slots": {
+        "s1": [
+          {
+            "code": "ReM (B)",
+            "session_num": 19
+          }
+        ],
+        "s2": [
+          {
+            "code": "ReM (B)",
+            "session_num": 20
+          }
+        ],
+        "s3": [
+          {
+            "code": "ASSAM",
+            "session_num": 20
+          },
+          {
+            "code": "CTO",
+            "session_num": 19
+          }
+        ],
+        "s4": [
+          {
+            "code": "CTO",
+            "session_num": 20
+          }
+        ],
+        "s5": [
+          {
+            "code": "FRM",
+            "session_num": 1
+          }
+        ],
+        "s6": [
+          {
+            "code": "FRM",
+            "session_num": 2
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-29",
+      "date_num": 29,
+      "month": "Nov '26",
+      "week": "W-11",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "FRM",
+            "session_num": 3
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-11-30",
+      "date_num": 30,
+      "month": "Nov '26",
+      "week": "W-11",
+      "day": "Mon",
+      "slots": {
+        "s2": [
+          {
+            "code": "NGO",
+            "session_num": 19
+          },
+          {
+            "code": "SDSCM",
+            "session_num": 17
+          }
+        ],
+        "s3": [
+          {
+            "code": "NGO",
+            "session_num": 20
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 17
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-01",
+      "date_num": 1,
+      "month": "Dec '26",
+      "week": "W-11",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 17
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 17
+          },
+          {
+            "code": "MACR",
+            "session_num": 17
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-02",
+      "date_num": 2,
+      "month": "Dec '26",
+      "week": "W-12",
+      "day": "Wed",
+      "slots": {
+        "s2": [
+          {
+            "code": "SDSCM",
+            "session_num": 18
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 18
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-03",
+      "date_num": 3,
+      "month": "Dec '26",
+      "week": "W-12",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 18
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 18
+          },
+          {
+            "code": "MACR",
+            "session_num": 18
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-04",
+      "date_num": 4,
+      "month": "Dec '26",
+      "week": "W-12",
+      "day": "Fri",
+      "slots": {}
+    },
+    {
+      "date": "2026-12-05",
+      "date_num": 5,
+      "month": "Dec '26",
+      "week": "W-12",
+      "day": "Sat",
+      "slots": {
+        "s5": [
+          {
+            "code": "FRM",
+            "session_num": 4
+          }
+        ],
+        "s6": [
+          {
+            "code": "FRM",
+            "session_num": 5
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-06",
+      "date_num": 6,
+      "month": "Dec '26",
+      "week": "W-12",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "FRM",
+            "session_num": 6
+          }
+        ],
+        "s2": [
+          {
+            "code": "FRM",
+            "session_num": 7
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-07",
+      "date_num": 7,
+      "month": "Dec '26",
+      "week": "W-12",
+      "day": "Mon",
+      "slots": {
+        "s1": [
+          {
+            "code": "SDSCM",
+            "session_num": 19
+          }
+        ],
+        "s2": [
+          {
+            "code": "SDSCM",
+            "session_num": 20
+          }
+        ],
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 19
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-08",
+      "date_num": 8,
+      "month": "Dec '26",
+      "week": "W-13",
+      "day": "Tue",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 19
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 19
+          },
+          {
+            "code": "MACR",
+            "session_num": 19
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-09",
+      "date_num": 9,
+      "month": "Dec '26",
+      "week": "W-13",
+      "day": "Wed",
+      "slots": {
+        "s4": [
+          {
+            "code": "CPM",
+            "session_num": 20
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-10",
+      "date_num": 10,
+      "month": "Dec '26",
+      "week": "W-13",
+      "day": "Thu",
+      "slots": {
+        "s1": [
+          {
+            "code": "IM",
+            "session_num": 20
+          }
+        ],
+        "s2": [
+          {
+            "code": "AMIMC",
+            "session_num": 20
+          },
+          {
+            "code": "MACR",
+            "session_num": 20
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-11",
+      "date_num": 11,
+      "month": "Dec '26",
+      "week": "W-13",
+      "day": "Fri",
+      "slots": {}
+    },
+    {
+      "date": "2026-12-12",
+      "date_num": 12,
+      "month": "Dec '26",
+      "week": "W-13",
+      "day": "Sat",
+      "slots": {
+        "s4": [
+          {
+            "code": "FRM",
+            "session_num": 8
+          }
+        ],
+        "s5": [
+          {
+            "code": "FRM",
+            "session_num": 9
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-13",
+      "date_num": 13,
+      "month": "Dec '26",
+      "week": "W-13",
+      "day": "Sun",
+      "slots": {
+        "s1": [
+          {
+            "code": "FRM",
+            "session_num": 10
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-12-14",
+      "date_num": 14,
+      "month": "Dec '26",
+      "week": "W-13",
+      "day": "Mon",
+      "slots": {}
+    },
+    {
+      "date": "2026-12-15",
+      "date_num": 15,
+      "month": "Dec '26",
+      "week": "W-14",
+      "day": "Tue",
+      "slots": {}
+    },
+    {
+      "date": "2026-12-16",
+      "date_num": 16,
+      "month": "Dec '26",
+      "week": "W-14",
+      "day": "Wed",
+      "slots": {}
+    },
+    {
+      "date": "2026-12-17",
+      "date_num": 17,
+      "month": "Dec '26",
+      "week": "W-14",
+      "day": "Thu",
+      "slots": {}
+    },
+    {
+      "date": "2026-12-18",
+      "date_num": 18,
+      "month": "Dec '26",
+      "week": "W-14",
+      "day": "Fri",
+      "slots": {}
+    },
+    {
+      "date": "2026-12-19",
+      "date_num": 19,
+      "month": "Dec '26",
+      "week": "W-14",
+      "day": "Sat",
+      "slots": {}
+    }
+  ],
+  "exams": [
+    {
+      "date": "2026-10-30",
+      "slot": "s1",
+      "text": "MSW End Term Exam => 9.30 am"
+    },
+    {
+      "date": "2026-10-30",
+      "slot": "s4",
+      "text": "FT&IT End Term Exam => 2.30 pm &"
+    },
+    {
+      "date": "2026-10-30",
+      "slot": "s4",
+      "text": "SL End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-10-31",
+      "slot": "s1",
+      "text": "CME End Term Exam => 9.30 am"
+    },
+    {
+      "date": "2026-10-31",
+      "slot": "s4",
+      "text": "RuM End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-11-01",
+      "slot": "s1",
+      "text": "Mid Term Exam (TBD)"
+    },
+    {
+      "date": "2026-11-01",
+      "slot": "s4",
+      "text": "Mid Term Exam (TBD)"
+    },
+    {
+      "date": "2026-11-29",
+      "slot": "s2",
+      "text": "IMC End Term Exam"
+    },
+    {
+      "date": "2026-12-01",
+      "slot": "s4",
+      "text": "FINTECH End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-12-03",
+      "slot": "s4",
+      "text": "ToC End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-12-04",
+      "slot": "s1",
+      "text": "BAAI End Term Exam => 9.30 am"
+    },
+    {
+      "date": "2026-12-04",
+      "slot": "s4",
+      "text": "MC End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-12-05",
+      "slot": "s1",
+      "text": "CRM End Term Exam => 9.30 am"
+    },
+    {
+      "date": "2026-12-06",
+      "slot": "s4",
+      "text": "CTO End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-12-08",
+      "slot": "s4",
+      "text": "ReM End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-12-09",
+      "slot": "s1",
+      "text": "ASSAM End Term Exam => 9.30 am"
+    },
+    {
+      "date": "2026-12-10",
+      "slot": "s4",
+      "text": "Exam TBD"
+    },
+    {
+      "date": "2026-12-11",
+      "slot": "s1",
+      "text": "SDSCM End Term Exam => 9.30 am"
+    },
+    {
+      "date": "2026-12-11",
+      "slot": "s4",
+      "text": "Exam TBD"
+    },
+    {
+      "date": "2026-12-12",
+      "slot": "s1",
+      "text": "Exam TBD"
+    },
+    {
+      "date": "2026-12-13",
+      "slot": "s4",
+      "text": "CPM End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-12-14",
+      "slot": "s1",
+      "text": "AMIMC End Term Exam => 9.30 am"
+    },
+    {
+      "date": "2026-12-14",
+      "slot": "s3",
+      "text": "End Term Exams"
+    },
+    {
+      "date": "2026-12-14",
+      "slot": "s5",
+      "text": "MACR End Term Exam => 2.30 pm"
+    },
+    {
+      "date": "2026-12-15",
+      "slot": "s1",
+      "text": "IM End Term Exam => 9.30 am"
+    },
+    {
+      "date": "2026-12-15",
+      "slot": "s5",
+      "text": "FRM End Term Exam => 2.30 pm"
+    }
+  ]
+}
