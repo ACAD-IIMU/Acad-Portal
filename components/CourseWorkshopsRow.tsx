@@ -73,10 +73,14 @@ function buildRedressLinks(subjectName: string, regNo: string, term: string, bat
   // the Android Gmail app doesn't register it at all.
   const iosApp = `googlegmail:///co?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
-  // Android: Chrome's intent:// syntax, targeting the Gmail package
-  // explicitly via a mailto payload. Chrome resolves the "app not installed"
-  // fallback natively via S.browser_fallback_url — no timeout guessing needed.
-  const androidIntent = `intent://${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}#Intent;scheme=mailto;package=com.google.android.gm;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  // Android: Chrome's intent: syntax, targeting the Gmail package explicitly
+  // via a mailto payload. No "//" after "intent:" — mailto: URIs have no
+  // authority component (mailto:addr, not mailto://addr), and Chrome carries
+  // whatever's there straight into the reconstructed mailto: URI; including
+  // "//" produced "mailto://addr", which Gmail parsed as "//addr" literally.
+  // Chrome resolves the "app not installed" fallback natively via
+  // S.browser_fallback_url — no timeout guessing needed.
+  const androidIntent = `intent:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}#Intent;scheme=mailto;package=com.google.android.gm;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 
   return { web, iosApp, androidIntent };
 }
