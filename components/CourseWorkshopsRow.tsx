@@ -1,13 +1,14 @@
 // components/CourseWorkshopsRow.tsx
 //
-// Redress is a mailto: link, not an in-app form — see app/eap/page.tsx for
-// why. That means there's no server round-trip and no way to know whether a
-// student actually sent the email or just closed the tab, so this component
-// has no "already requested" state anymore: the button is always just a link.
+// Redress opens a pre-filled Gmail compose (web on desktop, the Gmail app on
+// mobile) rather than an in-app form — see app/eap/page.tsx for why. That
+// means there's no server round-trip and no way to know whether a student
+// actually sent the email or just closed the tab, so this component has no
+// "already requested" state anymore: the button is always just a link.
 
 'use client';
 
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 
 type Subject = {
   name: string;
@@ -33,7 +34,13 @@ const STATUS_STYLE: Record<NonNullable<Subject['status']>, string> = {
   S_L: 'bg-gold-100 text-gold-600',
 };
 
-function buildRedressMailto(subjectName: string, regNo: string, term: string, batchLabel: string) {
+// Not mailto: — mailto: defers to whatever mail client the OS/browser has
+// registered as default (Outlook on some desktops, an arbitrary app picker
+// on mobile), which we can't control per-device. Instead we target Gmail
+// directly: the web compose UI on desktop, and the Gmail app's own deep-link
+// scheme on mobile — both using whichever Google account is already signed
+// in, which for these students is their @iimu.ac.in account from portal login.
+function buildRedressLinks(subjectName: string, regNo: string, term: string, batchLabel: string) {
   const year = batchLabel.match(/\d{4}/)?.[0] ?? '';
   const to = year ? `acad.${year}@iimu.ac.in` : '';
 
@@ -57,7 +64,27 @@ function buildRedressMailto(subjectName: string, regNo: string, term: string, ba
     'Thanks',
   ].join('\n');
 
-  return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const web = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  // Gmail app's documented deep-link scheme for opening the compose screen
+  // directly, on both Android and iOS, bypassing any OS mail-app chooser.
+  const app = `googlegmail:///co?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  return { web, app };
+}
+
+// Deep-links into the Gmail app on mobile; falls back to Gmail web (in a new
+// tab) if the app isn't installed, detected by whether the page is still
+// focused shortly after attempting the app link — a real app switch blurs
+// the tab before the timer fires.
+function openRedress(e: MouseEvent, web: string, app: string) {
+  e.stopPropagation();
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (!isMobile) return; // default <a target="_blank" href={web}> behavior handles desktop
+
+  e.preventDefault();
+  const fallback = setTimeout(() => window.open(web, '_blank'), 1500);
+  window.addEventListener('blur', () => clearTimeout(fallback), { once: true });
+  window.location.href = app;
 }
 
 export default function CourseWorkshopsRow({
@@ -153,15 +180,20 @@ export default function CourseWorkshopsRow({
                             {STATUS_LABEL[s.status]}
                           </span>
                         )}
-                        {isAbsent && (
-                          <a
-                            href={buildRedressMailto(s.name, regNo, term, batchLabel)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs border border-line rounded-full px-2.5 py-1 hover:border-danger hover:text-danger transition whitespace-nowrap"
-                          >
-                            Redress
-                          </a>
-                        )}
+                        {isAbsent && (() => {
+                          const { web, app } = buildRedressLinks(s.name, regNo, term, batchLabel);
+                          return (
+                            <a
+                              href={web}
+                              target="_blank"
+                              rel="noopener"
+                              onClick={(e) => openRedress(e, web, app)}
+                              className="text-xs border border-line rounded-full px-2.5 py-1 hover:border-danger hover:text-danger transition whitespace-nowrap"
+                            >
+                              Redress
+                            </a>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
