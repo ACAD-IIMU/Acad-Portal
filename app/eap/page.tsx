@@ -217,7 +217,7 @@ export default async function EapPointsPage() {
   }
 
   const { data: pointsData } = await supabase
-    .from('eap_points')
+    .from('stg_eap_points_term5_v2')
     .select(
       'fixed, flexi_core, stream_workshop, course_workshops, course_workshops_na, der_1, der_2, mock_bid, forms_by_acad, cgpa_component, cgpa_max, subject_representative, flexi_core_batchmeet, eap_batchmeet, pys, total'
     )
