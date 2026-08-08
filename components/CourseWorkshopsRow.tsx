@@ -8,7 +8,7 @@
 
 'use client';
 
-import { useState, type MouseEvent } from 'react';
+import { useState } from 'react';
 
 type Subject = {
   name: string;
@@ -91,25 +91,22 @@ function buildRedressLinks(subjectName: string, regNo: string, term: string, bat
 // trick (falls back to Gmail web in a new tab if the app isn't installed,
 // detected by whether the page is still focused shortly after — a real app
 // switch blurs the tab before the timer fires).
-function openRedress(e: MouseEvent, links: { web: string; iosApp: string; androidIntent: string }) {
-  e.stopPropagation();
+function goToRedress(links: { web: string; iosApp: string; androidIntent: string }) {
   const ua = navigator.userAgent;
 
   if (/Android/i.test(ua)) {
-    e.preventDefault();
     window.location.href = links.androidIntent;
     return;
   }
 
   if (/iPhone|iPad|iPod/i.test(ua)) {
-    e.preventDefault();
     const fallback = setTimeout(() => window.open(links.web, '_blank'), 1500);
     window.addEventListener('blur', () => clearTimeout(fallback), { once: true });
     window.location.href = links.iosApp;
     return;
   }
 
-  // desktop: default <a target="_blank" href={web}> behavior handles it
+  window.open(links.web, '_blank');
 }
 
 export default function CourseWorkshopsRow({
@@ -132,6 +129,10 @@ export default function CourseWorkshopsRow({
   subjects: Subject[];
 }) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState<{
+    subjectName: string;
+    links: { web: string; iosApp: string; androidIntent: string };
+  } | null>(null);
 
   const isPendingScore = value === null || value === undefined;
 
@@ -187,11 +188,6 @@ export default function CourseWorkshopsRow({
         <tr className="border-b border-line">
           <td colSpan={2} className="p-0">
             <div className="bg-brand-50/50 px-3 py-3.5 pl-8">
-              {subjects.some((s) => s.status === 'A' || s.status === 'S_L') && (
-                <p className="text-xs text-inkFaint italic mb-2.5">
-                  Redress opens Gmail as <span className="font-semibold">{studentEmail}</span>.
-                </p>
-              )}
               <div className="flex flex-col gap-0">
                 {subjects.map((s) => {
                   const isAbsent = s.status === 'A' || s.status === 'S_L';
@@ -216,16 +212,16 @@ export default function CourseWorkshopsRow({
                         {isAbsent && (() => {
                           const links = buildRedressLinks(s.name, regNo, term, batchLabel);
                           return (
-                            <a
-                              href={links.web}
-                              target="_blank"
-                              rel="noopener"
-                              title={`Opens Gmail as ${studentEmail}`}
-                              onClick={(e) => openRedress(e, links)}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirming({ subjectName: s.name, links });
+                              }}
                               className="text-xs border border-line rounded-full px-2.5 py-1 hover:border-danger hover:text-danger transition whitespace-nowrap"
                             >
                               Redress
-                            </a>
+                            </button>
                           );
                         })()}
                       </div>
@@ -236,6 +232,37 @@ export default function CourseWorkshopsRow({
             </div>
           </td>
         </tr>
+      )}
+
+      {confirming && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-card p-6 w-full max-w-sm">
+            <h3 className="text-lg mb-1">Send redress request?</h3>
+            <p className="text-sm text-inkSoft mb-5">
+              This opens Gmail as <span className="font-semibold">{studentEmail}</span> with a
+              pre-filled redress request for <span className="font-semibold">{confirming.subjectName}</span>.
+            </p>
+            <div className="flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setConfirming(null)}
+                className="text-sm font-semibold px-4 py-2 rounded-full border border-line hover:bg-cream transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  goToRedress(confirming.links);
+                  setConfirming(null);
+                }}
+                className="text-sm font-semibold px-4 py-2 rounded-full bg-brand-700 text-white hover:bg-brand-800 transition"
+              >
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
