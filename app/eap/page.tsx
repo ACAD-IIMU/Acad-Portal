@@ -233,7 +233,7 @@ export default async function EapPointsPage() {
       .eq('reg_no', student.reg_no)
       .eq('term', BIDDING_TERM),
     supabase
-      .from('eap_course_workshop_attendance')
+      .from('eap_course_workshop_attendance_t5')
       .select('subject_name, status, redress_requested')
       .eq('reg_no', student.reg_no)
       .eq('term', BIDDING_TERM),
@@ -255,7 +255,7 @@ export default async function EapPointsPage() {
     const attendance = attendanceBySubject.get(name);
     return {
       name,
-      status: (attendance?.status ?? null) as 'P' | 'A' | 'L' | 'S' | 'S_L' | null,
+      status: (attendance?.status ?? null) as 'P' | 'A' | 'L' | 'S' | 'S_L' | 'NA' | null,
       redressRequested: attendance?.redress_requested ?? false,
     };
   });

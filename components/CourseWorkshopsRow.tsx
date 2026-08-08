@@ -11,7 +11,7 @@ import { useState } from 'react';
 
 type Subject = {
   name: string;
-  status: 'P' | 'A' | 'L' | 'S' | 'S_L' | null; // null = mandated but no attendance data yet
+  status: 'P' | 'A' | 'L' | 'S' | 'S_L' | 'NA' | null; // null = mandated but no attendance data yet
 };
 
 const STATUS_LABEL: Record<NonNullable<Subject['status']>, string> = {
@@ -19,15 +19,18 @@ const STATUS_LABEL: Record<NonNullable<Subject['status']>, string> = {
   A: 'Absent',
   L: 'Late',
   S: 'Smart Casuals',
-  S_L: 'Absent', // S + L nets to zero credit — shown as Absent, matching how it was scored
+  S_L: 'S + L (Absent)', // nets to zero credit, scored as Absent — shown with the original "S + L" wording
+  NA: 'Not Applicable',
 };
 
+// P green, A red, NA gray, everything else (Late/Smart Casuals/S+L) yellow.
 const STATUS_STYLE: Record<NonNullable<Subject['status']>, string> = {
   P: 'bg-[#e2f2e8] text-[#1e7a4c]',
   A: 'bg-danger-100 text-danger',
+  NA: 'bg-line text-inkFaint',
   L: 'bg-gold-100 text-gold-600',
   S: 'bg-gold-100 text-gold-600',
-  S_L: 'bg-danger-100 text-danger',
+  S_L: 'bg-gold-100 text-gold-600',
 };
 
 function buildRedressMailto(subjectName: string, regNo: string, term: string, batchLabel: string) {
