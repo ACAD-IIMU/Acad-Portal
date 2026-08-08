@@ -33,7 +33,6 @@ type EapPointsRow = {
   mock_bid: number | null;
   forms_by_acad: number | null;
   cgpa_component: number | null;
-  cgpa_max: number | null;
   subject_representative: number | null;
   flexi_core_batchmeet: number;
   eap_batchmeet: number;
@@ -219,7 +218,7 @@ export default async function EapPointsPage() {
   const { data: pointsData } = await supabase
     .from('stg_eap_points_term5_v2')
     .select(
-      'fixed, flexi_core, stream_workshop, course_workshops, course_workshops_na, der_1, der_2, mock_bid, forms_by_acad, cgpa_component, cgpa_max, subject_representative, flexi_core_batchmeet, eap_batchmeet, pys, total'
+      'fixed, flexi_core, stream_workshop, course_workshops, course_workshops_na, der_1, der_2, mock_bid, forms_by_acad, cgpa_component, subject_representative, flexi_core_batchmeet, eap_batchmeet, pys, total'
     )
     .eq('reg_no', student.reg_no)
     .eq('term', BIDDING_TERM)
@@ -288,7 +287,7 @@ export default async function EapPointsPage() {
     { label: 'DER Round 2', value: points.der_2, max: 100 },
     { label: 'Mock Bidding', value: points.mock_bid, max: 30 },
     { label: 'Forms by ACAD', value: points.forms_by_acad, max: 20 },
-    { label: 'CGPA Component', value: points.cgpa_component, max: points.cgpa_max },
+    { label: 'CGPA Component', value: points.cgpa_component, max: 80 },
     { label: 'Subject Representative', value: points.subject_representative, max: 20 },
     { label: 'Flexi-Core Batch Meet', value: points.flexi_core_batchmeet, max: null, isPenalty: true },
     { label: 'EAP Batch Meet', value: points.eap_batchmeet, max: null, isPenalty: true },
