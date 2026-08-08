@@ -300,13 +300,16 @@ export default async function EapPointsPage() {
     { label: 'Stream Workshop', value: points.stream_workshop, max: 90 },
   ];
 
-  const bottomRows: ComponentRow[] = [
+  const scoreRows: ComponentRow[] = [
     { label: 'DER Round 1', value: points.der_1, max: 50 },
     { label: 'DER Round 2', value: points.der_2, max: 100 },
     { label: 'Mock Bidding', value: points.mock_bid, max: 30 },
     { label: 'Forms by ACAD', value: points.forms_by_acad, max: 20 },
     { label: 'CGPA Component', value: points.cgpa_component, max: 80 },
     { label: 'Subject Representative', value: points.subject_representative, max: 20 },
+  ];
+
+  const penaltyRows: ComponentRow[] = [
     { label: 'Flexi-Core Batch Meet', value: points.flexi_core_batchmeet, max: null, isPenalty: true },
     { label: 'EAP Batch Meet', value: points.eap_batchmeet, max: null, isPenalty: true },
     { label: 'Preliminary Yearly Survey', value: points.pys, max: null, isPenalty: true },
@@ -315,7 +318,8 @@ export default async function EapPointsPage() {
   const rows = [
     ...topRows,
     { label: 'Course Workshops', value: points.course_workshops, max: 210, isNA: points.course_workshops_na },
-    ...bottomRows,
+    ...scoreRows,
+    ...penaltyRows,
   ];
 
   const hasPendingComponent = rows.some(
@@ -382,7 +386,16 @@ export default async function EapPointsPage() {
               subjects={courseWorkshopSubjects}
             />
 
-            {bottomRows.map((row) => (
+            {scoreRows.map((row) => (
+              <PlainRow key={row.label} row={row} />
+            ))}
+
+            <tr>
+              <td colSpan={2} className="pt-4 pb-1.5 text-[11px] uppercase tracking-wide text-inkFaint font-semibold">
+                Penalties
+              </td>
+            </tr>
+            {penaltyRows.map((row) => (
               <PlainRow key={row.label} row={row} />
             ))}
           </tbody>
