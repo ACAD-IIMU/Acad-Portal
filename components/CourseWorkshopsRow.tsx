@@ -239,8 +239,9 @@ export default function CourseWorkshopsRow({
           <div className="bg-white rounded-card p-6 w-full max-w-sm">
             <h3 className="text-lg mb-1">Send redress request?</h3>
             <p className="text-sm text-inkSoft mb-5">
-              This opens Gmail as <span className="font-semibold">{studentEmail}</span> with a
-              pre-filled redress request for <span className="font-semibold">{confirming.subjectName}</span>.
+              This will open a mail from <span className="font-semibold">{studentEmail}</span> with
+              a pre-filled redress request for{' '}
+              <span className="font-semibold">{confirming.subjectName}</span>.
             </p>
             <div className="flex justify-end gap-2.5">
               <button
