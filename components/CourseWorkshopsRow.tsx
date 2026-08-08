@@ -156,10 +156,18 @@ export default function CourseWorkshopsRow({
         onClick={() => setOpen((o) => !o)}
       >
         <td className="py-2.5">
-          <span className={`inline-block w-3.5 text-xs text-inkFaint transition-transform ${open ? 'rotate-90' : ''}`}>
-            ▸
+          <span className="inline-flex items-center gap-2">
+            <span
+              className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-line text-brand-700 flex-shrink-0 transition-transform ${
+                open ? 'rotate-90' : ''
+              }`}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 6l6 6-6 6" />
+              </svg>
+            </span>
+            Course Workshops
           </span>
-          Course Workshops
         </td>
         <td className="py-2.5 text-right font-mono">
           {isPendingScore ? (
