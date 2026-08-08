@@ -40,12 +40,18 @@ const STATUS_STYLE: Record<NonNullable<Subject['status']>, string> = {
 // directly: the web compose UI on desktop, and the Gmail app's own deep-link
 // scheme on mobile — both using whichever Google account is already signed
 // in, which for these students is their @iimu.ac.in account from portal login.
-function buildRedressLinks(subjectName: string, regNo: string, term: string, batchLabel: string) {
+function buildRedressLinks(subjectName: string, regNo: string, term: string, batchLabel: string, studentEmail: string) {
   const year = batchLabel.match(/\d{4}/)?.[0] ?? '';
   const to = year ? `acad.${year}@iimu.ac.in` : '';
 
   const subject = `EAP Redress — ${term} — ${subjectName} — ${regNo}`;
 
+  // studentEmail is included in the body itself, not just our own
+  // pre-navigation confirmation modal — Gmail's own compose window, opened
+  // via a cold navigation, doesn't reliably show which signed-in account a
+  // draft belongs to (no inbox chrome/account switcher in that view), so
+  // this is the only place a student can verify it for certain once Gmail
+  // is actually open.
   const body = [
     'Hi ACAD,',
     '',
@@ -54,6 +60,7 @@ function buildRedressLinks(subjectName: string, regNo: string, term: string, bat
     `Reg. No.: ${regNo}`,
     `Subject: ${subjectName}`,
     `Term: ${term}`,
+    `Sent from: ${studentEmail}`,
     '',
     'Reason:',
     '[please describe why you were marked absent]',
@@ -67,7 +74,16 @@ function buildRedressLinks(subjectName: string, regNo: string, term: string, bat
   // No fs=1 (full-screen compose) — that mode hides Gmail's normal chrome,
   // including the account-switcher avatar, so students couldn't tell which
   // signed-in account they were about to send from.
-  const web = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  //
+  // authuser=<email> actually forces Gmail to use that specific signed-in
+  // account (if it's among the browser's active Google sessions) — without
+  // it, Gmail just uses whatever account happens to be its current default,
+  // which is not necessarily the one used to log into the portal. This is
+  // the fix, not just cosmetic: previously the confirmation modal displayed
+  // studentEmail as a claim about which account *would* be used, but nothing
+  // in the actual link enforced it, so a student with multiple Google
+  // accounts could end up sending from the wrong one.
+  const web = `https://mail.google.com/mail/?authuser=${encodeURIComponent(studentEmail)}&view=cm&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
   // googlegmail:// is the Gmail app's compose deep-link scheme on iOS only —
   // the Android Gmail app doesn't register it at all.
@@ -210,7 +226,7 @@ export default function CourseWorkshopsRow({
                           </span>
                         )}
                         {isAbsent && (() => {
-                          const links = buildRedressLinks(s.name, regNo, term, batchLabel);
+                          const links = buildRedressLinks(s.name, regNo, term, batchLabel, studentEmail);
                           return (
                             <button
                               type="button"
@@ -239,9 +255,11 @@ export default function CourseWorkshopsRow({
           <div className="bg-white rounded-card p-6 w-full max-w-sm">
             <h3 className="text-lg mb-1">Send redress request?</h3>
             <p className="text-sm text-inkSoft mb-5">
-              This will open a mail from <span className="font-semibold">{studentEmail}</span> with
-              a pre-filled redress request for{' '}
-              <span className="font-semibold">{confirming.subjectName}</span>.
+              This will open a pre-filled redress request for{' '}
+              <span className="font-semibold">{confirming.subjectName}</span>, intended to be sent
+              from <span className="font-semibold">{studentEmail}</span>. If a different account
+              opens in Gmail, please switch to that one before hitting send — we can&apos;t always
+              force which signed-in account Gmail uses, especially in the Gmail app.
             </p>
             <div className="flex justify-end gap-2.5">
               <button
