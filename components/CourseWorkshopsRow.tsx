@@ -64,27 +64,48 @@ function buildRedressLinks(subjectName: string, regNo: string, term: string, bat
     'Thanks',
   ].join('\n');
 
-  const web = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  // Gmail app's documented deep-link scheme for opening the compose screen
-  // directly, on both Android and iOS, bypassing any OS mail-app chooser.
-  const app = `googlegmail:///co?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  // No fs=1 (full-screen compose) — that mode hides Gmail's normal chrome,
+  // including the account-switcher avatar, so students couldn't tell which
+  // signed-in account they were about to send from.
+  const web = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
-  return { web, app };
+  // googlegmail:// is the Gmail app's compose deep-link scheme on iOS only —
+  // the Android Gmail app doesn't register it at all.
+  const iosApp = `googlegmail:///co?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  // Android: Chrome's intent:// syntax, targeting the Gmail package
+  // explicitly via a mailto payload. Chrome resolves the "app not installed"
+  // fallback natively via S.browser_fallback_url — no timeout guessing needed.
+  const androidIntent = `intent://${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}#Intent;scheme=mailto;package=com.google.android.gm;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+
+  return { web, iosApp, androidIntent };
 }
 
-// Deep-links into the Gmail app on mobile; falls back to Gmail web (in a new
-// tab) if the app isn't installed, detected by whether the page is still
-// focused shortly after attempting the app link — a real app switch blurs
-// the tab before the timer fires.
-function openRedress(e: MouseEvent, web: string, app: string) {
+// Deep-links into the Gmail app on mobile. Android and iOS need different
+// mechanisms (see buildRedressLinks); Android's intent:// URLs fall back to
+// web automatically, so only iOS needs the manual timeout/blur fallback
+// trick (falls back to Gmail web in a new tab if the app isn't installed,
+// detected by whether the page is still focused shortly after — a real app
+// switch blurs the tab before the timer fires).
+function openRedress(e: MouseEvent, links: { web: string; iosApp: string; androidIntent: string }) {
   e.stopPropagation();
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if (!isMobile) return; // default <a target="_blank" href={web}> behavior handles desktop
+  const ua = navigator.userAgent;
 
-  e.preventDefault();
-  const fallback = setTimeout(() => window.open(web, '_blank'), 1500);
-  window.addEventListener('blur', () => clearTimeout(fallback), { once: true });
-  window.location.href = app;
+  if (/Android/i.test(ua)) {
+    e.preventDefault();
+    window.location.href = links.androidIntent;
+    return;
+  }
+
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    e.preventDefault();
+    const fallback = setTimeout(() => window.open(links.web, '_blank'), 1500);
+    window.addEventListener('blur', () => clearTimeout(fallback), { once: true });
+    window.location.href = links.iosApp;
+    return;
+  }
+
+  // desktop: default <a target="_blank" href={web}> behavior handles it
 }
 
 export default function CourseWorkshopsRow({
@@ -181,13 +202,13 @@ export default function CourseWorkshopsRow({
                           </span>
                         )}
                         {isAbsent && (() => {
-                          const { web, app } = buildRedressLinks(s.name, regNo, term, batchLabel);
+                          const links = buildRedressLinks(s.name, regNo, term, batchLabel);
                           return (
                             <a
-                              href={web}
+                              href={links.web}
                               target="_blank"
                               rel="noopener"
-                              onClick={(e) => openRedress(e, web, app)}
+                              onClick={(e) => openRedress(e, links)}
                               className="text-xs border border-line rounded-full px-2.5 py-1 hover:border-danger hover:text-danger transition whitespace-nowrap"
                             >
                               Redress
