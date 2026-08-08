@@ -46,12 +46,6 @@ function buildRedressLinks(subjectName: string, regNo: string, term: string, bat
 
   const subject = `EAP Redress — ${term} — ${subjectName} — ${regNo}`;
 
-  // studentEmail is included in the body itself, not just our own
-  // pre-navigation confirmation modal — Gmail's own compose window, opened
-  // via a cold navigation, doesn't reliably show which signed-in account a
-  // draft belongs to (no inbox chrome/account switcher in that view), so
-  // this is the only place a student can verify it for certain once Gmail
-  // is actually open.
   const body = [
     'Hi ACAD,',
     '',
@@ -60,7 +54,6 @@ function buildRedressLinks(subjectName: string, regNo: string, term: string, bat
     `Reg. No.: ${regNo}`,
     `Subject: ${subjectName}`,
     `Term: ${term}`,
-    `Sent from: ${studentEmail}`,
     '',
     'Reason:',
     '[please describe why you were marked absent]',
