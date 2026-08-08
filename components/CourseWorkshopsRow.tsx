@@ -111,20 +111,20 @@ function openRedress(e: MouseEvent, links: { web: string; iosApp: string; androi
 export default function CourseWorkshopsRow({
   value,
   max,
-  didNotSubmitDer1,
   isNA,
   regNo,
   term,
   batchLabel,
+  studentEmail,
   subjects,
 }: {
   value: number | null;
   max: number;
-  didNotSubmitDer1: boolean;
   isNA: boolean;
   regNo: string;
   term: string;
   batchLabel: string;
+  studentEmail: string;
   subjects: Subject[];
 }) {
   const [open, setOpen] = useState(false);
@@ -175,11 +175,11 @@ export default function CourseWorkshopsRow({
         <tr className="border-b border-line">
           <td colSpan={2} className="p-0">
             <div className="bg-brand-50/50 px-3 py-3.5 pl-8">
-              <p className="text-xs text-inkFaint italic mb-2.5">
-                {didNotSubmitDer1
-                  ? "DER Round 1 wasn't submitted, so every workshop is mandated per policy — showing all electives."
-                  : 'Showing only the electives you selected in DER Round 1.'}
-              </p>
+              {subjects.some((s) => s.status === 'A' || s.status === 'S_L') && (
+                <p className="text-xs text-inkFaint italic mb-2.5">
+                  Redress opens Gmail as <span className="font-semibold">{studentEmail}</span>.
+                </p>
+              )}
               <div className="flex flex-col gap-0">
                 {subjects.map((s) => {
                   const isAbsent = s.status === 'A' || s.status === 'S_L';
@@ -208,6 +208,7 @@ export default function CourseWorkshopsRow({
                               href={links.web}
                               target="_blank"
                               rel="noopener"
+                              title={`Opens Gmail as ${studentEmail}`}
                               onClick={(e) => openRedress(e, links)}
                               className="text-xs border border-line rounded-full px-2.5 py-1 hover:border-danger hover:text-danger transition whitespace-nowrap"
                             >

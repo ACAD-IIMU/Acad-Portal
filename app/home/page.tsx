@@ -8,7 +8,7 @@ import MonthView from './MonthView';
 // This page is per-student personalized (enrollments, own sessions, own events) — it must
 // never be statically cached or served stale to a different logged-in user.
 export const dynamic = 'force-dynamic';
-import UserMenu from './UserMenu';
+import UserMenu from '@/components/UserMenu';
 
 const CURRENT_TERM = 'Term IV';
 // Fallback only — used if no sessions exist yet for the term (e.g. before the timetable

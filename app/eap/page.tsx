@@ -20,6 +20,7 @@ const EAP_SECTION_DISABLED = false;
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 import CourseWorkshopsRow from '@/components/CourseWorkshopsRow';
+import UserMenu from '@/components/UserMenu';
 import type { ReactNode } from 'react';
 
 type EapPointsRow = {
@@ -50,11 +51,24 @@ type ComponentRow = {
 
 // Wraps every return path so the sidebar is always present, error/empty
 // states included — matches the pattern of one shared shell per screen.
-function Shell({ batchLabel, children }: { batchLabel?: string; children: ReactNode }) {
+// userMenu is optional since some early-return states (not logged in, no
+// student record) don't have a student to build it from.
+function Shell({
+  batchLabel,
+  userMenu,
+  children,
+}: {
+  batchLabel?: string;
+  userMenu?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div className="flex min-h-screen">
       <Sidebar batchLabel={batchLabel} />
-      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8">{children}</main>
+      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8">
+        {userMenu && <div className="flex justify-end mb-5">{userMenu}</div>}
+        {children}
+      </main>
     </div>
   );
 }
@@ -199,7 +213,7 @@ export default async function EapPointsPage() {
 
   const { data: student, error: studentError } = await supabase
     .from('students')
-    .select('reg_no, batch_label')
+    .select('full_name, reg_no, batch_label')
     .eq('auth_user_id', user.id)
     .single();
 
@@ -214,6 +228,10 @@ export default async function EapPointsPage() {
       </Shell>
     );
   }
+
+  const userMenu = (
+    <UserMenu name={student.full_name ?? 'Student'} regNo={student.reg_no} batchLabel={student.batch_label} />
+  );
 
   const { data: pointsData } = await supabase
     .from('stg_eap_points_term5_v2')
@@ -262,7 +280,7 @@ export default async function EapPointsPage() {
 
   if (!points) {
     return (
-      <Shell batchLabel={student.batch_label}>
+      <Shell batchLabel={student.batch_label} userMenu={userMenu}>
         <div className="card p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base">EAP Bid Points</h2>
@@ -305,7 +323,7 @@ export default async function EapPointsPage() {
   );
 
   return (
-    <Shell batchLabel={student.batch_label}>
+    <Shell batchLabel={student.batch_label} userMenu={userMenu}>
       {/* Total banner */}
       <div className="rounded-card p-8 mb-5 flex items-center justify-between gap-6 flex-wrap text-white bg-[linear-gradient(120deg,#2a0f16,#7a2331_55%,#702c4e)]">
         <div>
@@ -357,10 +375,10 @@ export default async function EapPointsPage() {
               value={points.course_workshops}
               max={210}
               isNA={points.course_workshops_na}
-              didNotSubmitDer1={didNotSubmitDer1}
               regNo={student.reg_no}
               term={BIDDING_TERM}
               batchLabel={student.batch_label}
+              studentEmail={user.email ?? ''}
               subjects={courseWorkshopSubjects}
             />
 

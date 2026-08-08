@@ -11,6 +11,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
+import UserMenu from '@/components/UserMenu';
 import PlannerClient from './PlannerClient';
 import type { PlannerData } from '@/lib/plannerTypes';
 import plannerJson from '@/data/termPlanner.json';
@@ -23,7 +24,10 @@ const data = plannerJson as unknown as PlannerData;
 
 export default async function PlannerPage() {
   const supabase = createClient();
-  const { data: student } = await supabase.from('students').select('batch_label').single();
+  const { data: student } = await supabase
+    .from('students')
+    .select('full_name, reg_no, batch_label')
+    .single();
 
   const subjectCount = Object.keys(data.subject_sections).length;
   const sectionCount = Object.keys(data.courses).length;
@@ -37,13 +41,20 @@ export default async function PlannerPage() {
     <div className="flex min-h-screen">
       <Sidebar batchLabel={student?.batch_label} />
       <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8 flex flex-col gap-5">
-        <header>
-          <h1 className="text-2xl">{data.term} Planner</h1>
-          <p className="text-inkFaint text-sm">
-            {notGenerated
-              ? 'Timetable data has not been generated for this term yet.'
-              : `${subjectCount} courses · ${sectionCount} sections. Plan your electives, catch overlaps before bidding.`}
-          </p>
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl">{data.term} Planner</h1>
+            <p className="text-inkFaint text-sm">
+              {notGenerated
+                ? 'Timetable data has not been generated for this term yet.'
+                : `${subjectCount} courses · ${sectionCount} sections. Plan your electives, catch overlaps before bidding.`}
+            </p>
+          </div>
+          <UserMenu
+            name={student?.full_name ?? 'Student'}
+            regNo={student?.reg_no}
+            batchLabel={student?.batch_label}
+          />
         </header>
 
         {notGenerated ? (
