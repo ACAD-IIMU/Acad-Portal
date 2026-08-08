@@ -74,16 +74,16 @@ function buildRedressLinks(subjectName: string, regNo: string, term: string, bat
   // No fs=1 (full-screen compose) — that mode hides Gmail's normal chrome,
   // including the account-switcher avatar, so students couldn't tell which
   // signed-in account they were about to send from.
-  //
-  // authuser=<email> actually forces Gmail to use that specific signed-in
-  // account (if it's among the browser's active Google sessions) — without
-  // it, Gmail just uses whatever account happens to be its current default,
-  // which is not necessarily the one used to log into the portal. This is
-  // the fix, not just cosmetic: previously the confirmation modal displayed
-  // studentEmail as a claim about which account *would* be used, but nothing
-  // in the actual link enforced it, so a student with multiple Google
-  // accounts could end up sending from the wrong one.
-  const web = `https://mail.google.com/mail/?authuser=${encodeURIComponent(studentEmail)}&view=cm&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const composeUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  // Routing through Google's own AccountChooser rather than tacking
+  // authuser=<email> onto the mail.google.com URL directly: the latter is
+  // undocumented and races with Gmail's own account-resolution redirect on a
+  // cold tab (it can render with the wrong/default account before the
+  // switch finishes — this was exactly the "works the 2nd time, not the
+  // 1st" bug). AccountChooser explicitly switches identity first, then
+  // redirects to `continue`, so there's no race.
+  const web = `https://accounts.google.com/AccountChooser?Email=${encodeURIComponent(studentEmail)}&continue=${encodeURIComponent(composeUrl)}`;
 
   // googlegmail:// is the Gmail app's compose deep-link scheme on iOS only —
   // the Android Gmail app doesn't register it at all.
@@ -255,11 +255,9 @@ export default function CourseWorkshopsRow({
           <div className="bg-white rounded-card p-6 w-full max-w-sm">
             <h3 className="text-lg mb-1">Send redress request?</h3>
             <p className="text-sm text-inkSoft mb-5">
-              This will open a pre-filled redress request for{' '}
-              <span className="font-semibold">{confirming.subjectName}</span>, intended to be sent
-              from <span className="font-semibold">{studentEmail}</span>. If a different account
-              opens in Gmail, please switch to that one before hitting send — we can&apos;t always
-              force which signed-in account Gmail uses, especially in the Gmail app.
+              This will open a mail from <span className="font-semibold">{studentEmail}</span> with
+              a pre-filled redress request for{' '}
+              <span className="font-semibold">{confirming.subjectName}</span>.
             </p>
             <div className="flex justify-end gap-2.5">
               <button
