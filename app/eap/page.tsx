@@ -15,7 +15,7 @@ const BIDDING_TERM = 'Term V'; // the term being bid FOR — one ahead of CURREN
 // true, every student sees a static 0/1000 "will be updated shortly" view
 // regardless of their actual data (or lack of it), skipping all DB queries
 // entirely so this can't break due to any student's individual data state.
-const EAP_SECTION_DISABLED = true;
+const EAP_SECTION_DISABLED = false;
 
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
