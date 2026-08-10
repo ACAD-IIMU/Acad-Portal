@@ -301,6 +301,9 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
 
   let currentMonthYear = ""; // column A is merged/blank on most rows — carry forward
   let currentYear = new Date().getFullYear();
+  // Carries the last resolved date across "continuation" rows — see below. Distinct from
+  // currentMonthYear: that tracks the month label, this tracks the actual resolved date.
+  let lastSessionDate: string | null = null;
 
   for (let row = 3; row <= range.e.r; row++) {
     const monthCell = ws[XLSX.utils.encode_cell({ r: row, c: 0 })];
@@ -317,20 +320,38 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
     }
 
     const dateCell = ws[XLSX.utils.encode_cell({ r: row, c: 1 })];
-    if (!dateCell?.v) continue; // blank date row — skip (covers the stray continuation rows like 54/71/89+)
+    let sessionDate: string;
 
-    const dayNum = parseInt(dateCell.v.toString(), 10);
-    if (isNaN(dayNum)) continue;
+    if (dateCell?.v) {
+      const dayNum = parseInt(dateCell.v.toString(), 10);
+      if (isNaN(dayNum)) continue;
 
-    const sessionDate = resolveDate(currentMonthYear, dayNum, currentYear);
-    if (!sessionDate) {
-      unmapped.push({
-        sessionDate: "",
-        slotLabel: "(date resolution)",
-        rawText: `${currentMonthYear} / day ${dayNum}`,
-        reason: "Could not resolve month/year for this row — check manually",
-      });
-      continue;
+      const resolved = resolveDate(currentMonthYear, dayNum, currentYear);
+      if (!resolved) {
+        unmapped.push({
+          sessionDate: "",
+          slotLabel: "(date resolution)",
+          rawText: `${currentMonthYear} / day ${dayNum}`,
+          reason: "Could not resolve month/year for this row — check manually",
+        });
+        continue;
+      }
+      sessionDate = resolved;
+      lastSessionDate = resolved;
+    } else {
+      // Blank date cell. This sheet packs a day's row-pair using a vertical merge on
+      // columns A-F (the date/day/Session1-3 columns) but NOT on the later-session
+      // columns (G/H/I) — a merged cell's value only lives in its top-left anchor, so
+      // the second row of the pair reads back genuinely blank here even though it can
+      // still hold its own real, independent class in a later-session column (seen for
+      // real: row 71 has "PA (B)/(A) - S17" in G/H; row 54 has "B2B M (C) - S13" in F).
+      // Previously this row was skipped outright the moment the date cell read blank —
+      // silently dropping any such class with zero trace. Carrying the last resolved
+      // date forward and still scanning the row fixes that: a genuinely empty
+      // continuation row (e.g. row 89) just finds nothing in columns D-I and costs
+      // nothing extra, while one with real data now gets it correctly attributed.
+      if (!lastSessionDate) continue; // no prior date to carry forward — nothing safe to attribute this row to
+      sessionDate = lastSessionDate;
     }
 
     for (let col = 3; col <= 8; col++) {
