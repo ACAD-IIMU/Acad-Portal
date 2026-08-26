@@ -18,7 +18,7 @@ const MAX_PICKS = 3;
 // Remove both when ready to open nomination to everyone.
 const ALLOWED_REG_NOS = ['2511140', '2511313', '2511253'];
 
-type Pick = { subjectId: string; sectionId: string | null };
+type Pick = { subjectId: string; sectionId: string | null; priority: number };
 
 export async function POST(req: Request) {
   const supabase = createClient();
@@ -61,6 +61,18 @@ export async function POST(req: Request) {
   const uniqueSubjectIds = new Set(picks.map((p) => p.subjectId));
   if (uniqueSubjectIds.size !== picks.length) {
     return NextResponse.json({ error: 'Duplicate subject in your picks' }, { status: 400 });
+  }
+
+  // Priorities must be exactly {1, 2, ..., picks.length} — no gaps, no
+  // duplicates, no skipping straight to 3 for a single pick.
+  const sortedPriorities = picks.map((p) => p.priority).sort((a, b) => a - b);
+  const expectedPriorities = picks.map((_, i) => i + 1);
+  const prioritiesValid = sortedPriorities.every((v, i) => v === expectedPriorities[i]);
+  if (!prioritiesValid) {
+    return NextResponse.json(
+      { error: `Priorities must be 1 to ${picks.length} with no gaps or duplicates` },
+      { status: 400 }
+    );
   }
 
   // THE FREEZE: any existing row for this student+term at all means they've
@@ -112,7 +124,8 @@ export async function POST(req: Request) {
     student_id: student.id,
     subject_id: p.subjectId,
     section_id: p.sectionId,
-    term
+    term,
+    priority: p.priority
   }));
 
   const { error: insertErr } = await supabase.from('sr_nominations').insert(rowsToInsert);

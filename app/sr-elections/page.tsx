@@ -72,10 +72,10 @@ export default async function SrElectionsPage() {
 
   const { data: existingNominations } = await supabase
     .from('sr_nominations')
-    .select('subject_id, section_id, submitted_at, subjects(name), sections(section_label)')
+    .select('subject_id, section_id, priority, submitted_at, subjects(name), sections(section_label)')
     .eq('student_id', student.id)
     .eq('term', TERM)
-    .order('submitted_at', { ascending: true });
+    .order('priority', { ascending: true });
 
   // Already submitted — locked-in, read-only confirmation. No edit path exists
   // at all, by design, so there's nothing else to render here.
@@ -93,8 +93,10 @@ export default async function SrElectionsPage() {
             </p>
             <ul className="flex flex-col gap-2">
               {existingNominations.map((n: any, i: number) => (
-                <li key={i} className="flex items-center gap-2 text-sm">
-                  <span className="text-brand-700">✓</span>
+                <li key={i} className="flex items-center gap-3 text-sm">
+                  <span className="w-6 h-6 rounded-full bg-brand-900 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                    {n.priority}
+                  </span>
                   <b>{n.subjects?.name}</b>
                   {n.sections?.section_label ? ` · Sec ${n.sections.section_label}` : ''}
                 </li>
