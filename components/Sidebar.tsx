@@ -38,6 +38,16 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: '/sr-elections',
+    label: 'SR Elections',
+    icon: (
+      <>
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <path d="M8 12.5l2.5 2.5L16 9" />
+      </>
+    ),
+  },
+  {
     href: '/planner',
     label: 'Term Planner',
     icon: (
