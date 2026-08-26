@@ -7,11 +7,6 @@
 
 const TERM = 'Term V';
 
-// TEMPORARY soft-launch gate — only these 3 can see this page while we verify
-// it end-to-end. Remove this constant and the check below when ready to open
-// nomination to everyone. (Thilak, Yassar Mohammed, Subhadeep Kuila)
-const ALLOWED_REG_NOS = ['2511140', '2511313', '2511253'];
-
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 import UserMenu from '@/components/UserMenu';
@@ -59,16 +54,6 @@ export default async function SrElectionsPage() {
   const userMenu = (
     <UserMenu name={student.full_name} regNo={student.reg_no} batchLabel={student.batch_label} />
   );
-
-  if (!ALLOWED_REG_NOS.includes(student.reg_no)) {
-    return (
-      <Shell batchLabel={student.batch_label} userMenu={userMenu}>
-        <div className="card p-5 text-sm text-inkFaint italic">
-          SR Elections nomination isn&apos;t open yet — check back soon.
-        </div>
-      </Shell>
-    );
-  }
 
   const { data: existingNominations } = await supabase
     .from('sr_nominations')

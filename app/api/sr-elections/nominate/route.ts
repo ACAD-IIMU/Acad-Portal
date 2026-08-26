@@ -14,10 +14,6 @@ import { createClient } from '@/lib/supabase/server';
 
 const MAX_PICKS = 3;
 
-// TEMPORARY soft-launch gate — keep in sync with app/sr-elections/page.tsx.
-// Remove both when ready to open nomination to everyone.
-const ALLOWED_REG_NOS = ['2511140', '2511313', '2511253'];
-
 type Pick = { subjectId: string; sectionId: string | null; priority: number };
 
 export async function POST(req: Request) {
@@ -30,14 +26,10 @@ export async function POST(req: Request) {
 
   const { data: student } = await supabase
     .from('students')
-    .select('id, reg_no')
+    .select('id')
     .eq('auth_user_id', user.id)
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
-
-  if (!ALLOWED_REG_NOS.includes(student.reg_no)) {
-    return NextResponse.json({ error: 'SR Elections nomination is not open yet' }, { status: 403 });
-  }
 
   let body: { term?: string; picks?: Pick[] };
   try {
