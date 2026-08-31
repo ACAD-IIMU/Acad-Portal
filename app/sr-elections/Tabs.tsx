@@ -22,7 +22,7 @@ export default function SrElectionsTabs({
   nomination: ReactNode;
   voting: ReactNode;
 }) {
-  const [active, setActive] = useState<Tab>('nomination');
+  const [active, setActive] = useState<Tab>('voting');
 
   return (
     <div className="flex flex-col gap-5">
