@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 import UserMenu from '@/components/UserMenu';
 import NominationForm from './NominationForm';
+import VotingForm from './VotingForm';
 import SrElectionsTabs from './Tabs';
 import type { ReactNode } from 'react';
 
@@ -129,11 +130,7 @@ export default async function SrElectionsPage() {
     );
   }
 
-  const votingContent = (
-    <p className="text-sm text-inkFaint italic card p-5">
-      Voting hasn&apos;t opened yet. Check back once nominations close.
-    </p>
-  );
+  const votingContent = <VotingForm term={TERM} />;
 
   return (
     <Shell batchLabel={student.batch_label} userMenu={userMenu}>
