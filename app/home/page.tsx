@@ -86,6 +86,38 @@ export default async function HomePage() {
     .eq('term', TERM_5)
     .order('event_date');
 
+  // New: personal reminders (this student's own) and SR class announcements (anything
+  // an SR has posted for a subject+section this student is enrolled in — RLS does the
+  // actual scoping here, matching the same enrollment join `sessions` already uses, so
+  // this can never show a different set of subjects than the student's real timetable
+  // would). Both filtered to upcoming only, same "gte now" pattern as upcomingEvents
+  // above rather than showing reminders that have already passed.
+  const { data: personalReminders } = await supabase
+    .from('reminders')
+    .select('id, title, target_at, subjects(name)')
+    .eq('type', 'personal')
+    .gte('target_at', now.toISOString())
+    .order('target_at');
+
+  const { data: srAnnouncements } = await supabase
+    .from('reminders')
+    .select('id, title, target_at, subjects(name), sections(section_label)')
+    .eq('type', 'sr_announcement')
+    .gte('target_at', now.toISOString())
+    .order('target_at');
+
+  // This student's own enrolled subjects for TERM_5 — populates the optional subject
+  // dropdown when adding a personal reminder ("Corp Val assignment due" etc).
+  const { data: enrolledSubjects } = await supabase
+    .from('enrollments')
+    .select('subject_id, subjects(name)')
+    .eq('student_id', student?.id ?? '')
+    .eq('term', TERM_5);
+  const studentSubjects = (enrolledSubjects ?? [])
+    .map((e) => ({ id: e.subject_id, name: (e.subjects as any)?.name as string | undefined }))
+    .filter((s): s is { id: string; name: string } => !!s.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div className="flex min-h-screen">
       <Sidebar batchLabel={student?.batch_label} />
@@ -121,7 +153,13 @@ export default async function HomePage() {
         />
         <div className="flex flex-col gap-5">
           <QuickLinks />
-          <Reminders events={upcomingEvents ?? []} todayDate={today} />
+          <Reminders
+            events={upcomingEvents ?? []}
+            todayDate={today}
+            personalReminders={(personalReminders ?? []) as any}
+            srAnnouncements={(srAnnouncements ?? []) as any}
+            studentSubjects={studentSubjects}
+          />
         </div>
       </div>
 

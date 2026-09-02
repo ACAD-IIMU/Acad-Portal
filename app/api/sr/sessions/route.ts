@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data: assignments } = await supabase
     .from('sr_assignments')
-    .select('subject_id, section_id, term, drive_folder_link, subjects(name)')
+    .select('subject_id, section_id, term, drive_folder_link, subjects(name), sections(section_label)')
     .eq('student_id', student.id);
 
   if (!assignments || assignments.length === 0) {
@@ -47,5 +47,29 @@ export async function GET() {
 
   allSessions.sort((x, y) => x.session_date.localeCompare(y.session_date));
 
-  return NextResponse.json({ isSr: true, sessions: allSessions });
+  // For the "post a class announcement" form on the SR Tools page — which of their
+  // subject+section assignments can they post to, named for a dropdown. Reuses the
+  // subjects(name)/sections(section_label) already joined above — no extra query needed.
+  const assignmentOptions = assignments.map((a) => ({
+    subjectId: a.subject_id,
+    subjectName: (a.subjects as any)?.name ?? 'Subject',
+    sectionId: a.section_id,
+    sectionLabel: (a.sections as any)?.section_label ?? null
+  }));
+
+  // Announcements this SR has already posted (any subject+section they're assigned to),
+  // so the page can list them with a delete option.
+  const { data: announcements } = await supabase
+    .from('reminders')
+    .select('id, title, target_at, subject_id, section_id, subjects(name), sections(section_label)')
+    .eq('type', 'sr_announcement')
+    .eq('created_by', student.id)
+    .order('target_at');
+
+  return NextResponse.json({
+    isSr: true,
+    sessions: allSessions,
+    assignmentOptions,
+    announcements: announcements ?? []
+  });
 }

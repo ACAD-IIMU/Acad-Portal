@@ -17,6 +17,21 @@ type SessionRow = {
   prereads: Preread[] | null;
   driveFolderLink: string | null;
 };
+type AssignmentOption = {
+  subjectId: string;
+  subjectName: string;
+  sectionId: string | null;
+  sectionLabel: string | null;
+};
+type Announcement = {
+  id: string;
+  title: string;
+  target_at: string;
+  subject_id: string;
+  section_id: string | null;
+  subjects: { name: string } | null;
+  sections: { section_label: string | null } | null;
+};
 
 function dateLabel(dateStr: string) {
   return new Date(`${dateStr}T00:00:00+05:30`).toLocaleDateString('en-GB', {
@@ -26,10 +41,24 @@ function dateLabel(dateStr: string) {
   });
 }
 
+function formatReminderWhen(targetAtISO: string) {
+  const target = new Date(targetAtISO);
+  const dLabel = target.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+  const tLabel = target.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata'
+  });
+  return `${dLabel}, ${tLabel}`;
+}
+
 export default function SrUploadPage() {
   const [loading, setLoading] = useState(true);
   const [isSr, setIsSr] = useState(false);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [assignmentOptions, setAssignmentOptions] = useState<AssignmentOption[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   async function refresh() {
     setLoading(true);
@@ -38,6 +67,8 @@ export default function SrUploadPage() {
       const data = await res.json();
       setIsSr(data.isSr ?? false);
       setSessions(data.sessions ?? []);
+      setAssignmentOptions(data.assignmentOptions ?? []);
+      setAnnouncements(data.announcements ?? []);
     } finally {
       setLoading(false);
     }
@@ -65,23 +96,37 @@ export default function SrUploadPage() {
   return (
     <main className="max-w-3xl mx-auto px-4 py-8 flex flex-col gap-5">
       <div>
-        <h1 className="text-2xl">SR Tools — Prereads</h1>
-        <p className="text-inkFaint text-sm">Upload prereads for your upcoming sessions.</p>
+        <h1 className="text-2xl">SR Tools</h1>
+        <p className="text-inkFaint text-sm">Upload prereads and post announcements for your subject(s).</p>
       </div>
 
-      <div className="card p-4 text-sm text-inkSoft">
-        <b>How this works:</b> each session below links to your subject &amp; section's own
-        folder — upload your file there first (any file type), then come back, copy its
-        share link from Drive (right-click the file → Share → Copy link), and paste it in.
+      <div>
+        <h2 className="text-base mb-2">Class Announcements</h2>
+        <ClassAnnouncements
+          assignmentOptions={assignmentOptions}
+          announcements={announcements}
+          onChanged={refresh}
+        />
       </div>
 
-      {sessions.length === 0 && (
-        <p className="text-sm text-inkFaint italic">No upcoming sessions found for your subject(s).</p>
-      )}
+      <div>
+        <h2 className="text-base mb-2">Prereads</h2>
+        <div className="card p-4 text-sm text-inkSoft mb-3">
+          <b>How this works:</b> each session below links to your subject &amp; section's own
+          folder — upload your file there first (any file type), then come back, copy its
+          share link from Drive (right-click the file → Share → Copy link), and paste it in.
+        </div>
 
-      {sessions.map((s) => (
-        <SessionUploadCard key={s.id} session={s} onChanged={refresh} />
-      ))}
+        {sessions.length === 0 && (
+          <p className="text-sm text-inkFaint italic">No upcoming sessions found for your subject(s).</p>
+        )}
+
+        <div className="flex flex-col gap-3">
+          {sessions.map((s) => (
+            <SessionUploadCard key={s.id} session={s} onChanged={refresh} />
+          ))}
+        </div>
+      </div>
     </main>
   );
 }
@@ -265,5 +310,176 @@ function RemoveButton({ prereadId, onRemoved }: { prereadId: string; onRemoved: 
     >
       {removing ? 'Removing…' : '✕ Remove'}
     </button>
+  );
+}
+
+function ClassAnnouncements({
+  assignmentOptions,
+  announcements,
+  onChanged
+}: {
+  assignmentOptions: AssignmentOption[];
+  announcements: Announcement[];
+  onChanged: () => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  // Keyed as "subjectId::sectionId" (sectionId 'null' string for no-section) so a single
+  // <select> can represent both fields at once — mirrors the same composite-key pattern
+  // used elsewhere in this codebase for subject+section matching.
+  const [assignmentKey, setAssignmentKey] = useState(
+    assignmentOptions[0] ? `${assignmentOptions[0].subjectId}::${assignmentOptions[0].sectionId ?? 'null'}` : ''
+  );
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handlePost() {
+    if (!title.trim() || !date || !time || !assignmentKey) {
+      setError('Title, date, time, and a subject are all required.');
+      return;
+    }
+    const [subjectId, sectionIdRaw] = assignmentKey.split('::');
+    const sectionId = sectionIdRaw === 'null' ? null : sectionIdRaw;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const targetAt = `${date}T${time}:00+05:30`;
+      const res = await fetch('/api/reminders/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'sr_announcement', title: title.trim(), targetAt, subjectId, sectionId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? 'Failed to post');
+      setTitle('');
+      setDate('');
+      setTime('');
+      setShowForm(false);
+      onChanged();
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to post announcement');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(reminderId: string) {
+    setDeletingId(reminderId);
+    try {
+      const res = await fetch('/api/reminders/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reminderId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? 'Failed to delete');
+      onChanged();
+    } catch (err: any) {
+      alert(err?.message ?? 'Failed to delete');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-inkSoft">
+          Visible to every student enrolled in the subject+section you post to — same as their
+          class sessions.
+        </p>
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="text-xs font-semibold text-brand-700 hover:underline shrink-0 ml-3"
+        >
+          {showForm ? 'Cancel' : '+ Post announcement'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="border border-line rounded-lg p-3 mb-3 flex flex-col gap-2">
+          <input
+            type="text"
+            placeholder="Announcement text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="text-xs border border-line rounded-lg px-2.5 py-1.5"
+          />
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="text-xs border border-line rounded-lg px-2.5 py-1.5 flex-1"
+            />
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              className="text-xs border border-line rounded-lg px-2.5 py-1.5 flex-1"
+            />
+          </div>
+          {assignmentOptions.length > 1 && (
+            <select
+              value={assignmentKey}
+              onChange={(e) => setAssignmentKey(e.target.value)}
+              className="text-xs border border-line rounded-lg px-2.5 py-1.5"
+            >
+              {assignmentOptions.map((a) => {
+                const key = `${a.subjectId}::${a.sectionId ?? 'null'}`;
+                return (
+                  <option key={key} value={key}>
+                    {a.subjectName}
+                    {a.sectionLabel ? ` (Sec ${a.sectionLabel})` : ''}
+                  </option>
+                );
+              })}
+            </select>
+          )}
+          {error && <p className="text-xs text-danger">{error}</p>}
+          <button
+            onClick={handlePost}
+            disabled={saving}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white bg-brand-900 hover:bg-brand-800 disabled:opacity-40"
+          >
+            {saving ? 'Posting…' : 'Post'}
+          </button>
+        </div>
+      )}
+
+      {announcements.length === 0 ? (
+        <p className="text-xs text-inkFaint italic">No announcements posted yet.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {announcements.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-start gap-2 text-xs text-inkSoft bg-brand-50 rounded-lg px-3 py-2.5 leading-relaxed"
+            >
+              <span className="shrink-0">📢</span>
+              <span className="flex-1">
+                {a.title}
+                {a.subjects?.name && <span className="text-inkFaint"> · {a.subjects.name}</span>}
+                {a.sections?.section_label && <span className="text-inkFaint"> (Sec {a.sections.section_label})</span>}
+                {' — '}
+                <b>{formatReminderWhen(a.target_at)}</b>
+              </span>
+              <button
+                onClick={() => handleDelete(a.id)}
+                disabled={deletingId === a.id}
+                className="shrink-0 text-inkFaint hover:text-danger disabled:opacity-40"
+                aria-label="Delete announcement"
+              >
+                {deletingId === a.id ? '…' : '✕'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
