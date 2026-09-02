@@ -37,7 +37,8 @@ function dateLabel(dateStr: string) {
   return new Date(`${dateStr}T00:00:00+05:30`).toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
-    month: 'short'
+    month: 'short',
+    timeZone: 'Asia/Kolkata'
   });
 }
 

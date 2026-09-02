@@ -43,15 +43,36 @@ function iconForFlag(flag: string) {
   return '📅'; // 'other' — holidays, registration, tutorials, guest sessions
 }
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+// Parses date-only strings (e.g. "2026-09-14") anchored to IST midnight, then reads
+// year/month back via the UTC getters — NOT the local getters (.getFullYear()/.getMonth()
+// on their own would report whatever the viewer's own browser timezone says that instant
+// is, which is exactly the bug class fixed throughout this file: a viewer whose system
+// timezone sits behind IST could see this resolve to the wrong month around a boundary.
+// Reading the anchored instant with UTC getters sidesteps the browser's local timezone
+// entirely, so this is correct regardless of who's viewing it from where.
+function istYearMonth(dateOnly: string): { y: number; m: number } {
+  const d = new Date(`${dateOnly}T00:00:00+05:30`);
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() };
+}
 
 function monthsBetween(start: string, end: string) {
-  const s = new Date(start);
-  const e = new Date(end);
+  const { y: startY, m: startM } = istYearMonth(start);
+  const { y: endY, m: endM } = istYearMonth(end);
   const months: { y: number; m: number }[] = [];
-  let cur = new Date(s.getFullYear(), s.getMonth(), 1);
-  while (cur <= e) {
-    months.push({ y: cur.getFullYear(), m: cur.getMonth() });
-    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  let y = startY;
+  let m = startM;
+  while (y < endY || (y === endY && m <= endM)) {
+    months.push({ y, m });
+    m += 1;
+    if (m > 11) {
+      m = 0;
+      y += 1;
+    }
   }
   return months;
 }
@@ -70,16 +91,21 @@ export default function MonthView({
   termEnd: string;
 }) {
   const months = useMemo(() => monthsBetween(termStart, termEnd), [termStart, termEnd]);
-  const today = new Date();
+  // IST calendar date as 'YYYY-MM-DD', computed once and reused for both "which month
+  // should default open" and "which day cell is today" below — never local getters on a
+  // bare `new Date()`, which would follow the viewer's own browser timezone instead of IST.
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const [todayY, todayMDisplay] = todayIso.split('-').map(Number);
+  const todayM = todayMDisplay - 1; // 0-indexed to match `months`
   const defaultIndex = Math.max(
     0,
-    months.findIndex((mo) => mo.y === today.getFullYear() && mo.m === today.getMonth())
+    months.findIndex((mo) => mo.y === todayY && mo.m === todayM)
   );
-  const [viewIndex, setViewIndex] = useState(defaultIndex === -1 ? 0 : defaultIndex);
+  const [viewIndex, setViewIndex] = useState(defaultIndex);
   const [openDay, setOpenDay] = useState<string | null>(null); // 'YYYY-MM-DD'
 
   const { y, m } = months[viewIndex];
-  const monthLabel = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthLabel = `${MONTH_NAMES[m]} ${y}`;
 
   const eventsByDate = useMemo(() => {
     const map: Record<string, { time?: string; label: string; flag?: string; room?: string | null; sessionNumber?: number }[]> = {};
@@ -117,7 +143,7 @@ export default function MonthView({
     cells.push({ day: trailingDay++, faint: true, dateKey: '' });
   }
 
-  const isToday = (dateKey: string) => dateKey === today.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const isToday = (dateKey: string) => dateKey === todayIso;
   // Sorted (not insertion-order) so the same subject always lands on the same color
   // regardless of which session happens to be encountered first while scanning dates —
   // otherwise the legend and the day chips could disagree, or the same subject could
@@ -240,7 +266,12 @@ function DayOverlay({
   subjectColors: string[];
   onClose: () => void;
 }) {
-  const label = new Date(dateKey).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  const label = new Date(`${dateKey}T00:00:00+05:30`).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'Asia/Kolkata'
+  });
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
       <div className="bg-white rounded-card p-6 w-full max-w-sm max-h-[80vh] overflow-y-auto">

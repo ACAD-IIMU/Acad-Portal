@@ -109,7 +109,11 @@ export default function Reminders({
         {upcomingAcadDates.map((e) => {
           const icon = e.type === 'endterm' ? '🎓' : '📝';
           const when = e.daysAway === 0 ? 'today' : e.daysAway === 1 ? 'tomorrow' : `in ${e.daysAway} days`;
-          const dateLabel = new Date(e.event_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+          const dateLabel = new Date(`${e.event_date}T00:00:00+05:30`).toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            timeZone: 'Asia/Kolkata'
+          });
           return (
             <ReminderItem key={e.id} icon={icon}>
               {e.label} — <b>{dateLabel}</b> ({when})
