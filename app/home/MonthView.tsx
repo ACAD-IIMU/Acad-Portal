@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { formatTime12h } from '@/lib/formatTime';
+import AddToCalendarButton from './AddToCalendarButton';
 
 type SessionRow = {
   id: string;
@@ -13,34 +14,28 @@ type SessionRow = {
 };
 type EventRow = { id: string; event_date: string; type: string; label: string };
 
-// One color per real subject code, evenly spread in hue (consistent saturation/lightness
-// for a cohesive feel) and anchored near the brand's crimson hue so the family reads as
-// related to the site's own palette rather than a generic rainbow.
-const SUBJECT_COLORS: Record<string, string> = {
-  'B2B M': '#C52B4C',
-  'BM': '#C5342B',
-  'CB': '#C55E2B',
-  'CV': '#C5872B',
-  'DSDT': '#C5B12B',
-  'FD': '#AEC52B',
-  'FSA': '#84C52B',
-  'HRM(IR)': '#5AC52B',
-  'INV': '#30C52B',
-  'MG': '#2BC550',
-  'MoB': '#2BC579',
-  'MSAIC': '#2BC5A3',
-  'PA': '#2BBCC5',
-  'PCG': '#2B92C5',
-  'PEVC': '#2B68C5',
-  'PM': '#2B3EC5',
-  'PSM': '#422BC5',
-  'Rev Mgmt': '#6C2BC5',
-  'SCM': '#952BC5',
-  'SDM': '#BF2BC5',
-  'SRC': '#C52BA0',
-  'TS-ADR': '#C52B76'
-};
+// One color per real subject, generated on the fly rather than hardcoded by name — the
+// previous version was a static table keyed to Term IV's exact subject names ('B2B M',
+// 'BM', 'Rev Mgmt', 'TS-ADR', ...), so the moment the term changed to Term V's entirely
+// different subject list, almost every subject fell through to FALLBACK_COLOR and every
+// chip rendered the same flat gray. Same bug class as CURRENT_TERM being hardcoded: a
+// per-term fact baked in as if permanent. This generates an evenly-spaced hue wheel sized
+// to however many subjects actually exist in the sessions passed in, anchored at the same
+// hue (~347°, near the brand's crimson) and using the same saturation/lightness (64%/47%)
+// as the old hand-picked palette, so the visual style is unchanged — only the source of
+// which subject gets which slot is now dynamic instead of a name lookup that goes stale
+// every term.
+const HUE_ANCHOR = 347;
+const COLOR_SATURATION = 64;
+const COLOR_LIGHTNESS = 47;
 const FALLBACK_COLOR = '#8A8A8A';
+
+function colorForSubject(name: string, sortedSubjects: string[]): string {
+  const idx = sortedSubjects.indexOf(name);
+  if (idx === -1 || sortedSubjects.length === 0) return FALLBACK_COLOR;
+  const hue = (HUE_ANCHOR + (360 / sortedSubjects.length) * idx) % 360;
+  return `hsl(${hue.toFixed(1)}, ${COLOR_SATURATION}%, ${COLOR_LIGHTNESS}%)`;
+}
 
 function iconForFlag(flag: string) {
   if (flag === 'endterm') return '🎓';
@@ -123,11 +118,18 @@ export default function MonthView({
   }
 
   const isToday = (dateKey: string) => dateKey === today.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  const uniqueSubjects = Array.from(new Set(sessions.map((s) => s.subjects?.name).filter(Boolean))) as string[];
+  // Sorted (not insertion-order) so the same subject always lands on the same color
+  // regardless of which session happens to be encountered first while scanning dates —
+  // otherwise the legend and the day chips could disagree, or the same subject could
+  // shift color between page loads if query ordering ever changed.
+  const uniqueSubjects = useMemo(
+    () => Array.from(new Set(sessions.map((s) => s.subjects?.name).filter(Boolean))).sort() as string[],
+    [sessions]
+  );
 
   return (
     <div className="card p-6">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
         <div className="flex items-center gap-3.5">
           <h2 className="text-base">
             {monthLabel} <span className="text-inkFaint text-xs font-medium">{termLabel}</span>
@@ -154,17 +156,18 @@ export default function MonthView({
             </button>
           </div>
         </div>
-        <div className="flex gap-3 flex-wrap text-xs text-inkSoft">
-          {uniqueSubjects.map((name) => (
-            <span key={name} className="inline-flex items-center gap-1.5">
-              <i
-                className="w-2 h-2 rounded-full inline-block"
-                style={{ background: SUBJECT_COLORS[name] ?? FALLBACK_COLOR }}
-              />
-              {name}
-            </span>
-          ))}
-        </div>
+        <AddToCalendarButton />
+      </div>
+      <div className="flex gap-3 flex-wrap text-xs text-inkSoft mb-4">
+        {uniqueSubjects.map((name) => (
+          <span key={name} className="inline-flex items-center gap-1.5">
+            <i
+              className="w-2 h-2 rounded-full inline-block"
+              style={{ background: colorForSubject(name, uniqueSubjects) }}
+            />
+            {name}
+          </span>
+        ))}
       </div>
 
       <div className="grid grid-cols-7 gap-px bg-line border border-line rounded-lg overflow-hidden">
@@ -200,7 +203,7 @@ export default function MonthView({
                     key={idx}
                     title={e.room ? `Room ${e.room}` : undefined}
                     className="text-[10.5px] mt-0.5 px-1.5 py-0.5 rounded text-white truncate"
-                    style={{ background: SUBJECT_COLORS[e.label] ?? FALLBACK_COLOR }}
+                    style={{ background: colorForSubject(e.label, uniqueSubjects) }}
                   >
                     {e.time} {e.label}{e.sessionNumber ? ` S${e.sessionNumber}` : ''}
                   </div>
@@ -218,6 +221,7 @@ export default function MonthView({
         <DayOverlay
           dateKey={openDay}
           events={eventsByDate[openDay] ?? []}
+          subjectColors={uniqueSubjects}
           onClose={() => setOpenDay(null)}
         />
       )}
@@ -228,10 +232,12 @@ export default function MonthView({
 function DayOverlay({
   dateKey,
   events,
+  subjectColors,
   onClose
 }: {
   dateKey: string;
   events: { time?: string; label: string; flag?: string; room?: string | null; sessionNumber?: number }[];
+  subjectColors: string[];
   onClose: () => void;
 }) {
   const label = new Date(dateKey).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -251,7 +257,7 @@ function DayOverlay({
               <div key={i} className="flex items-center gap-2.5 border border-line rounded-lg px-3 py-2 text-sm">
                 <span
                   className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
-                  style={{ background: SUBJECT_COLORS[e.label] ?? FALLBACK_COLOR }}
+                  style={{ background: colorForSubject(e.label, subjectColors) }}
                 />
                 <span className="font-mono text-xs text-inkFaint w-16 shrink-0">{e.time}</span>
                 <span className="flex-1">
