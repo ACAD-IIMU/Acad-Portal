@@ -4,13 +4,13 @@ import TodaysClasses from './TodaysClasses';
 import Reminders from './Reminders';
 import QuickLinks from './QuickLinks';
 import MonthView from './MonthView';
+import { TERM_5 } from '@/lib/term5';
 
 // This page is per-student personalized (enrollments, own sessions, own events) — it must
 // never be statically cached or served stale to a different logged-in user.
 export const dynamic = 'force-dynamic';
 import UserMenu from '@/components/UserMenu';
 
-const CURRENT_TERM = 'Term IV';
 // Fallback only — used if no sessions exist yet for the term (e.g. before the timetable
 // sync has run). Once real sessions exist, the actual range below always wins.
 const FALLBACK_TERM_START = '2026-06-07';
@@ -43,7 +43,7 @@ export default async function HomePage() {
   const { data: earliestSession } = await supabase
     .from('sessions')
     .select('session_date')
-    .eq('term', CURRENT_TERM)
+    .eq('term', TERM_5)
     .order('session_date', { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -51,7 +51,7 @@ export default async function HomePage() {
   const { data: latestSession } = await supabase
     .from('sessions')
     .select('session_date')
-    .eq('term', CURRENT_TERM)
+    .eq('term', TERM_5)
     .order('session_date', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -76,14 +76,14 @@ export default async function HomePage() {
   const { data: upcomingEvents } = await supabase
     .from('important_events')
     .select('*, subjects(name)')
-    .eq('term', CURRENT_TERM)
+    .eq('term', TERM_5)
     .gte('event_date', today)
     .order('event_date');
 
   const { data: allTermEvents } = await supabase
     .from('important_events')
     .select('*, subjects(name)')
-    .eq('term', CURRENT_TERM)
+    .eq('term', TERM_5)
     .order('event_date');
 
   return (
@@ -127,7 +127,7 @@ export default async function HomePage() {
 
       <MonthView
         sessions={termSessions ?? []}
-        termLabel={CURRENT_TERM}
+        termLabel={TERM_5}
         termStart={TERM_START}
         termEnd={TERM_END}
         importantEvents={allTermEvents ?? []}

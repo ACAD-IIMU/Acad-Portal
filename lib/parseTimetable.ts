@@ -6,7 +6,7 @@ export interface ParsedSession {
   rawCode: string;          // original text, for logging
   sectionLabel: string | null;
   sessionNumber: number;
-  room: string;
+  room: string | null;      // null when the source sheet hasn't assigned a room yet
   sessionDate: string;      // YYYY-MM-DD
   startTime: string;        // HH:MM (from the fixed 6-slot header)
   endTime: string;
@@ -31,26 +31,35 @@ export interface TimeSlot {
 // single chunk can yield zero, one, or several matches back-to-back (handles entries
 // stacked without a real separator), and a soft line-wrap between the "- Sn" part and
 // the "(room)" part (now normalized to a space) no longer breaks a normal single entry.
+// The trailing room group is OPTIONAL — the "Term V" tab has real classes with no room
+// assigned yet at all (e.g. "IMC - S9", nothing after), which previously failed to match
+// this regex at all and silently vanished into `unmapped` instead of becoming a session
+// with room = null. The `\s*` immediately before the optional group only ever consumes
+// whitespace, never other text, so this stays safe for back-to-back stacked entries: a
+// room-less match still stops exactly at its own "Sn" and doesn't reach across into a
+// different, later entry's room.
 const SESSION_RE_GLOBAL =
-  /(.*?)\s*(?:\(([A-Z])\))?\s*-\s*S(\d+)(?:\(DB\))?\s*\(([^)]+)\)/g;
+  /(.*?)\s*(?:\(([A-Z])\))?\s*-\s*S(\d+)(?:\(DB\))?\s*(?:\(([^)]+)\))?/g;
 
 // Joint-section pattern: e.g. "MG (A) & (B) - S13(DB) (CR-8B-18)" — both sections attend
 // the same physical session together (seen recurring for MG roughly every 3-4 weeks).
 // One match here becomes TWO session rows (one per section), same time/room/session number.
+// Room optional for the same reason as SESSION_RE_GLOBAL above.
 const JOINT_SECTION_RE =
-  /(.*?)\s*\(([A-Z])\)\s*&\s*\(([A-Z])\)\s*-\s*S(\d+)(?:\(DB\))?\s*\(([^)]+)\)/g;
+  /(.*?)\s*\(([A-Z])\)\s*&\s*\(([A-Z])\)\s*-\s*S(\d+)(?:\(DB\))?\s*(?:\(([^)]+)\))?/g;
 
 // Double-period override: e.g. "MG (A) - S9 & S10 (Session will start from 8.00 am) (EH-1)"
 // — two consecutive session-numbers combined into one physical block starting earlier than
 // the normal slot time. Produces ONE session with its own start/end time, not the column's.
+// Room optional for the same reason as SESSION_RE_GLOBAL above.
 const DOUBLE_PERIOD_RE =
-  /(.*?)\s*(?:\(([A-Z])\))?\s*-\s*S(\d+)\s*&\s*S(\d+)\s*\(Session will start from\s*(\d{1,2})[.:](\d{2})\s*([ap]m)\)\s*\(([^)]+)\)/gi;
+  /(.*?)\s*(?:\(([A-Z])\))?\s*-\s*S(\d+)\s*&\s*S(\d+)\s*\(Session will start from\s*(\d{1,2})[.:](\d{2})\s*([ap]m)\)\s*(?:\(([^)]+)\))?/gi;
 
 interface RawMatch {
   rawCode: string;
   section: string | null;
   sessionNumber: number;
-  room: string;
+  room: string | null;
   overrideStartTime?: string;
   overrideEndTime?: string;
 }
@@ -114,7 +123,7 @@ function extractSessionsFromChunk(
         rawCode: rawCode.trim(),
         section: section ?? null,
         sessionNumber: parseInt(sn1, 10),
-        room: room.trim(),
+        room: room?.trim() || null,
         overrideStartTime,
         overrideEndTime,
       },
@@ -128,9 +137,10 @@ function extractSessionsFromChunk(
     const stage1 = scanWithGlobalRegex(piece, JOINT_SECTION_RE, (m) => {
       const [, rawCode, sec1, sec2, snStr, room] = m;
       const sessionNumber = parseInt(snStr, 10);
+      const roomVal = room?.trim() || null;
       return [
-        { rawCode: rawCode.trim(), section: sec1, sessionNumber, room: room.trim() },
-        { rawCode: rawCode.trim(), section: sec2, sessionNumber, room: room.trim() },
+        { rawCode: rawCode.trim(), section: sec1, sessionNumber, room: roomVal },
+        { rawCode: rawCode.trim(), section: sec2, sessionNumber, room: roomVal },
       ];
     });
     matches.push(...stage1.matches);
@@ -145,7 +155,7 @@ function extractSessionsFromChunk(
         rawCode: m[1].trim(),
         section: m[2] ?? null,
         sessionNumber: parseInt(m[3], 10),
-        room: m[4].trim(),
+        room: m[4]?.trim() || null,
       },
     ]);
     matches.push(...stage2.matches);
@@ -188,6 +198,44 @@ export function normalizeCode(code: string): string {
   return code.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+/** Finds the header row within the first `maxScanRow` rows — the row whose first three
+ * columns read "Month" / "Date" / "Day" (case-insensitive), rather than assuming a fixed
+ * row index. Needed because the sheet's row layout isn't stable term to term: "Term-IV"
+ * has a blank spacer row above the header (header on row 3, 0-indexed row 2), while the
+ * newer "Term V" tab drops that spacer (header on row 2, 0-indexed row 1) — a hardcoded
+ * row index silently read data rows as the header and vice versa. Failing loudly if no
+ * match is found (rather than falling back to a guessed row) matches the same fail-loud
+ * approach already used for sheet selection above. */
+function findHeaderRow(ws: XLSX.WorkSheet, maxScanRow: number): number {
+  for (let r = 0; r <= maxScanRow; r++) {
+    const a = ws[XLSX.utils.encode_cell({ r, c: 0 })]?.v;
+    const b = ws[XLSX.utils.encode_cell({ r, c: 1 })]?.v;
+    const c = ws[XLSX.utils.encode_cell({ r, c: 2 })]?.v;
+    if (
+      String(a ?? "").trim().toLowerCase() === "month" &&
+      String(b ?? "").trim().toLowerCase() === "date" &&
+      String(c ?? "").trim().toLowerCase() === "day"
+    ) {
+      return r;
+    }
+  }
+  throw new Error(`Could not find header row ("Month"/"Date"/"Day") in the first ${maxScanRow + 1} rows.`);
+}
+
+/** Parses a text month/year label like "June '26" into {month, year}. Returns null if it
+ * doesn't resolve to a real month (isMonthLabel should already have screened out week
+ * markers like "W-1" before this is called, but stays defensive regardless). */
+function parseMonthYearLabel(label: string): { month: number; year: number } | null {
+  const m = label.match(/([A-Za-z]{3,})[^0-9]*(\d{2,4})/);
+  if (!m) return null;
+  const monthKey = m[1].slice(0, 3).toLowerCase();
+  const month = MONTH_NAMES[monthKey];
+  if (!month) return null;
+  let year = parseInt(m[2], 10);
+  if (year < 100) year += 2000;
+  return { month, year };
+}
+
 /** Splits a cell's text into individual class entries (cells can hold several "/"-separated concurrent classes). */
 /** Fixes an inverted "Guest Session" phrasing where the marker sits in parens BEFORE the
  * real room, and the real room itself has no parens at all — e.g. "SCM (A) & (B) - S19
@@ -200,6 +248,33 @@ function fixGuestSessionInversion(chunk: string): string {
     const normalized = room.toLowerCase() === "audi" ? "Auditorium" : room;
     return `(${normalized})`;
   });
+}
+
+/** Confirmed, recurring data-entry typo in the "Term V" source sheet: "ASSAM - 17" instead
+ * of "ASSAM - S17" (missing the "S" session-number prefix) — seen across multiple file
+ * revisions without being corrected upstream, confirmed manually rather than guessed.
+ * Scoped to just this one subject code so it can't misfire on some other legitimately
+ * different "SubjectCode - <number>" text elsewhere. The `\s*` around the hyphen tolerates
+ * the sheet's usual whitespace/line-wrap variation. Deliberately does NOT match when a
+ * session marker is already correctly present (e.g. "ASSAM - S17") — `\d+` only matches
+ * digits, not the letter "S", so already-correct entries pass through untouched. */
+function fixAssamMissingSessionPrefix(chunk: string): string {
+  return chunk.replace(/\bASSAM\s*-\s*(\d+)\b/gi, (_full, num: string) => `ASSAM - S${num}`);
+}
+
+/** Known one-off session annotations that the source sheet doesn't (and likely never will)
+ * express in text at all — confirmed directly rather than derived from the file. Kept as a
+ * small, explicit lookup keyed by normalized subject code + session number, so it can only
+ * ever apply to that exact session and can't accidentally catch an unrelated one that
+ * happens to share a session number with a different subject. */
+const KNOWN_SESSION_ROOM_OVERRIDES: Record<string, string> = {
+  // Confirmed: IM's Session 12 is an off-campus field visit, not a classroom session —
+  // hence no room ever appears for it in the sheet, and "TBD" would be misleading.
+  "IM::12": "Field Visit",
+};
+
+function applyKnownRoomOverride(subjectCode: string, sessionNumber: number, room: string | null): string | null {
+  return KNOWN_SESSION_ROOM_OVERRIDES[`${subjectCode}::${sessionNumber}`] ?? room;
 }
 
 /** Splits a cell's text on '/' — the sheet's one intentional separator between concurrent
@@ -253,8 +328,10 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
   unmapped: UnmappedEntry[];
   skippedStrikethrough: UnmappedEntry[];
 }> {
-  // cellStyles + cellHTML needed to inspect strikethrough runs on individual cells
-  const wb = XLSX.read(buffer, { type: "buffer", cellStyles: true, cellHTML: true });
+  // cellStyles + cellHTML needed to inspect strikethrough runs on individual cells.
+  // cellDates: true so a date-formatted Month-column cell (used by the "Term V" tab —
+  // see the Month-cell handling below) comes through as a JS Date, not a raw serial number.
+  const wb = XLSX.read(buffer, { type: "buffer", cellStyles: true, cellHTML: true, cellDates: true });
 
   // Picks the sheet by NAME matching targetTerm — not wb.SheetNames[0]. Reading by
   // position silently broke when a new "Term V" tab got added ahead of "Term-IV" in
@@ -276,10 +353,14 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
   // text apart from normal text within a single cell, so this reads the raw file XML directly.
   const strikeMap = await buildStrikethroughMap(buffer, targetTerm);
 
-  // Row 3 (0-indexed row 2) holds the 6 session headers in columns D-I (0-indexed 3-8)
+  // Header row holds "Month"/"Date"/"Day" in columns A-C and the 6 session-time labels
+  // in columns D-I — located dynamically (see findHeaderRow) rather than assumed to
+  // always be row 3, since that assumption already broke once between terms.
+  const headerRow = findHeaderRow(ws, 10);
+
   const slots: TimeSlot[] = [];
   for (let col = 3; col <= 8; col++) {
-    const cell = ws[XLSX.utils.encode_cell({ r: 2, c: col })];
+    const cell = ws[XLSX.utils.encode_cell({ r: headerRow, c: col })];
     const text = (cell?.v ?? "").toString();
     const times = parseTimeRangeLabel(text);
     slots.push({
@@ -299,23 +380,41 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
   const unmapped: UnmappedEntry[] = [];
   const skippedStrikethrough: UnmappedEntry[] = [];
 
-  let currentMonthYear = ""; // column A is merged/blank on most rows — carry forward
-  let currentYear = new Date().getFullYear();
+  // Carries the current month/year forward across rows where column A is blank (merged
+  // cells only carry their value on the top-left anchor). Tracked as a resolved
+  // {month, year} pair rather than the raw label text — see the two cases below.
+  let currentResolvedMonth: number | null = null;
+  let currentResolvedYear: number | null = null;
   // Carries the last resolved date across "continuation" rows — see below. Distinct from
-  // currentMonthYear: that tracks the month label, this tracks the actual resolved date.
+  // the month/year above: that tracks the month, this tracks the actual resolved date.
   let lastSessionDate: string | null = null;
 
-  for (let row = 3; row <= range.e.r; row++) {
+  for (let row = headerRow + 1; row <= range.e.r; row++) {
     const monthCell = ws[XLSX.utils.encode_cell({ r: row, c: 0 })];
-    if (monthCell?.v) {
-      const candidate = monthCell.v.toString().trim();
-      // Column A mixes two label types: real month markers ("June '26", possibly with a
-      // curly quote depending on how it was typed) and week markers ("W-1", "W-2", ...).
-      // Checking against the actual month-name list (rather than matching a specific quote
-      // character) avoids both false negatives (curly vs straight quote) and false positives
-      // (a week label like "W-10"/"W-12" that happens to have 2 digits).
-      if (isMonthLabel(candidate)) {
-        currentMonthYear = candidate;
+    if (monthCell?.v !== undefined && monthCell?.v !== null && monthCell?.v !== "") {
+      if (monthCell.v instanceof Date) {
+        // The "Term V" tab enters this as an actual Excel date, custom-formatted to
+        // DISPLAY as "September '26" in Excel — but `xlsx` only exposes the underlying
+        // date value, not the applied display format, so the month/year are read
+        // directly off the date rather than off any displayed text. UTC getters because
+        // cellDates:true parses the serial number as a UTC midnight instant.
+        currentResolvedMonth = monthCell.v.getUTCMonth() + 1;
+        currentResolvedYear = monthCell.v.getUTCFullYear();
+      } else {
+        // "Term-IV"-style plain text label, e.g. "June '26" (possibly with a curly quote
+        // depending on how it was typed). Column A mixes two label types here: real month
+        // markers and week markers ("W-1", "W-2", ...) — checking against the actual
+        // month-name list (rather than matching a specific quote character) avoids both
+        // false negatives (curly vs straight quote) and false positives (a week label
+        // like "W-10"/"W-12" that happens to have 2 digits).
+        const candidate = monthCell.v.toString().trim();
+        if (isMonthLabel(candidate)) {
+          const parsed = parseMonthYearLabel(candidate);
+          if (parsed) {
+            currentResolvedMonth = parsed.month;
+            currentResolvedYear = parsed.year;
+          }
+        }
       }
     }
 
@@ -326,18 +425,17 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
       const dayNum = parseInt(dateCell.v.toString(), 10);
       if (isNaN(dayNum)) continue;
 
-      const resolved = resolveDate(currentMonthYear, dayNum, currentYear);
-      if (!resolved) {
+      if (currentResolvedMonth === null || currentResolvedYear === null) {
         unmapped.push({
           sessionDate: "",
           slotLabel: "(date resolution)",
-          rawText: `${currentMonthYear} / day ${dayNum}`,
+          rawText: `day ${dayNum} — no month resolved yet for this row`,
           reason: "Could not resolve month/year for this row — check manually",
         });
         continue;
       }
-      sessionDate = resolved;
-      lastSessionDate = resolved;
+      sessionDate = `${currentResolvedYear}-${String(currentResolvedMonth).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+      lastSessionDate = sessionDate;
     } else {
       // Blank date cell. This sheet packs a day's row-pair using a vertical merge on
       // columns A-F (the date/day/Session1-3 columns) but NOT on the later-session
@@ -397,7 +495,7 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
         cellText = rawCellText;
       }
 
-      for (const entryText of splitCellEntries(fixGuestSessionInversion(cellText))) {
+      for (const entryText of splitCellEntries(fixAssamMissingSessionPrefix(fixGuestSessionInversion(cellText)))) {
         if (NO_CLASS_MARKERS.has(entryText)) continue;
 
         // "Independence Day" gets split across two non-adjacent cells in the same row
@@ -458,12 +556,13 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
         }
 
         for (const match of matches) {
+          const subjectCode = normalizeCode(match.rawCode);
           sessions.push({
-            subjectCode: normalizeCode(match.rawCode),
+            subjectCode,
             rawCode: match.rawCode,
             sectionLabel: match.section,
             sessionNumber: match.sessionNumber,
-            room: match.room,
+            room: applyKnownRoomOverride(subjectCode, match.sessionNumber, match.room),
             sessionDate,
             startTime: match.overrideStartTime ?? slot.startTime,
             endTime: match.overrideEndTime ?? slot.endTime,
@@ -485,19 +584,3 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
   return { sessions, unmapped, skippedStrikethrough };
 }
 
-function resolveDate(monthYearLabel: string, day: number, fallbackYear: number): string | null {
-  // e.g. "June '26" (or "June '26" with a curly quote, or no quote at all) — [^0-9]*
-  // deliberately doesn't care what character (if any) sits between name and digits.
-  const m = monthYearLabel.match(/([A-Za-z]{3,})[^0-9]*(\d{2,4})/);
-  if (!m) return null;
-  const monthNames: Record<string, number> = {
-    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
-    jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
-  };
-  const monthKey = m[1].slice(0, 3).toLowerCase();
-  const month = monthNames[monthKey];
-  if (!month) return null;
-  let year = parseInt(m[2], 10);
-  if (year < 100) year += 2000;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}

@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
 import { parseTimetableWorkbook, normalizeCode } from "@/lib/parseTimetable";
 import { extractEventsFromUnmapped } from "@/lib/parseEvents";
+import { TERM_5 } from "@/lib/term5";
 
 // Protects this endpoint from being hit by anyone but Vercel Cron / you manually.
 // Vercel Cron sends this header automatically; for manual testing, pass ?secret=... instead.
@@ -16,8 +17,13 @@ function isAuthorized(req: Request): boolean {
   );
 }
 
+// Single-batch by design, for now: this syncs only MBA2's (2025-27) workbook/term.
+// MBA1 (2026-28) has its own timetable sheet with a different strikethrough format
+// (cell-level, not the OOXML rich-text runs this file's parser expects) — syncing it
+// needs this route to become batch-parameterized (route/query param choosing FILE_ID +
+// TERM + parser variant), not just swapping TERM_5 for a future TERM_2. Not done yet.
 const FILE_ID = "1OjH92BHuiKBIqai-YTiR0Hx2DFZ2lkpM"; // MBA 2025-27 Batch Timetable.xlsx
-const TERM = "Term IV";
+const TERM = TERM_5;
 
 // Known abbreviations used in the sheet that don't normalize-match the full subject name.
 const EVENT_CODE_ALIASES: Record<string, string> = {

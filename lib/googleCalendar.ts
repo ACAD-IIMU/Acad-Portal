@@ -1,11 +1,12 @@
 import { google } from 'googleapis';
 import { createAdminClient } from '@/lib/supabase/server';
-
-// Term date range — same TODO as app/home/page.tsx: move to a real `terms` table.
-const TERM_START = '2026-01-12';
-const TERM_END = '2026-03-20';
+import { TERM_5 } from '@/lib/term5';
 
 export async function pushScheduleToCalendar(studentId: string) {
+  // Hardcoded to TERM_5 (MBA2) below — an MBA1 student calling this today would just
+  // find zero enrollments for Term V and get nothing pushed (harmless, not broken), but
+  // this function doesn't yet know how to push MBA1's own current term. Needs the same
+  // batch-parameterization as sync-timetable/route.ts before MBA1 students can use it.
   const admin = createAdminClient();
 
   const { data: tokenRow } = await admin
@@ -26,17 +27,41 @@ export async function pushScheduleToCalendar(studentId: string) {
 
   const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-  const { data: sessions } = await admin
-    .from('sessions')
-    .select('id, session_date, start_time, end_time, room, subjects(name)')
-    .gte('session_date', TERM_START)
-    .lte('session_date', TERM_END);
-  // Note: sessions here should really be filtered to this student's enrollments — this
-  // admin-client query bypasses RLS, so in production add an explicit enrollment join/filter
-  // rather than relying on RLS to scope it (RLS only auto-scopes queries made with the
-  // student's own session, not the service-role client used here).
+  // This function uses the admin (service-role) client, which bypasses RLS — so unlike
+  // every other query in the app, the enrollment scoping normally handled automatically
+  // by the "students see sessions they're enrolled in" RLS policy does NOT apply here.
+  // Previously this queried `sessions` directly by a hardcoded date range with no student
+  // filter at all, which meant every click pushed every section's every session in that
+  // window into the clicking student's calendar, not just their own.
+  //
+  // Fix: replicate the RLS policy's join explicitly — fetch this student's own enrollments
+  // for TERM_5, then keep only sessions matching (subject_id, section_id) from that
+  // set, same null-safe section match the policy uses (a subject with no sectioning has
+  // section_id = null on both sides).
+  const { data: enrollments } = await admin
+    .from('enrollments')
+    .select('subject_id, section_id')
+    .eq('student_id', studentId)
+    .eq('term', TERM_5);
 
-  for (const s of sessions ?? []) {
+  if (!enrollments || enrollments.length === 0) {
+    return; // Not enrolled in anything this term — nothing to push.
+  }
+
+  const enrolledKeys = new Set(
+    enrollments.map((e) => `${e.subject_id}::${e.section_id ?? 'null'}`)
+  );
+
+  const { data: allTermSessions } = await admin
+    .from('sessions')
+    .select('id, session_date, start_time, end_time, room, subject_id, section_id, subjects(name)')
+    .eq('term', TERM_5);
+
+  const sessions = (allTermSessions ?? []).filter((s) =>
+    enrolledKeys.has(`${s.subject_id}::${s.section_id ?? 'null'}`)
+  );
+
+  for (const s of sessions) {
     // Calendar event IDs must be lowercase base32hex (a-v, 0-9), no dashes — a session's
     // UUID hex characters (0-9a-f) already satisfy that once dashes are stripped.
     const eventId = `sess${s.id.replace(/-/g, '')}`.slice(0, 1024);

@@ -147,7 +147,7 @@ export default function TodaysClasses({
                 <b>{s.subjects?.name}</b>
                 <span className="text-inkFaint text-xs ml-1.5">S{s.session_number}</span>
                 <div className="text-sm text-inkSoft">
-                  {s.faculty_name} · Room {s.room}
+                  {s.faculty_name} · Room {s.room ?? 'TBD'}
                   {s.sections?.section_label ? ` · Sec ${s.sections.section_label}` : ''}
                 </div>
                 <PrereadBadges noPreread={s.no_preread} prereads={s.prereads ?? []} />
