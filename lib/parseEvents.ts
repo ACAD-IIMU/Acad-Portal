@@ -83,6 +83,20 @@ function extractEventsFromText(
       cursor = keywordEnd + consumedAfterKeyword + timeEnd;
 
       const type = classifyType(keyword);
+
+      // A bare "End Term Exams" / "Quiz" with NO subject code at all (code === "" after
+      // stripping) is a generic block-marker in the sheet — e.g. real data: cell F97 on
+      // 2026-12-14 literally just says "End Term Exams", while the SAME day's other
+      // slots (D97, H97) carry proper "AMIMC End Term Exam", "MACR End Term Exam"
+      // entries. The bare one isn't a real, attributable exam for any specific subject —
+      // inserting it anyway produced a subject_id = null calendar row with no way to
+      // scope it to the students it's actually relevant to, so every student saw an
+      // exam reminder for a course that isn't theirs. Drop it here instead (falls back
+      // to `stillUnmapped` for visibility) rather than manufacture a subject-less event.
+      if (!code && type !== "other") {
+        continue;
+      }
+
       let label = type === "quiz" && num ? `${code} Quiz ${num}` : `${code} ${keyword}`;
       if (time) label += ` — ${time}`;
       events.push({ subjectCodeRaw: code, type, label: label.trim() });
