@@ -1,6 +1,42 @@
-import { google } from 'googleapis';
+import { google, calendar_v3 } from 'googleapis';
 import { createAdminClient } from '@/lib/supabase/server';
 import { TERM_5 } from '@/lib/term5';
+
+type SessionToPush = {
+  id: string;
+  session_date: string;
+  start_time: string;
+  end_time: string;
+  room: string | null;
+  subjects: { name: string } | null;
+};
+
+async function pushOneSession(calendar: calendar_v3.Calendar, s: SessionToPush) {
+  // Calendar event IDs must be lowercase base32hex (a-v, 0-9), no dashes — a session's
+  // UUID hex characters (0-9a-f) already satisfy that once dashes are stripped.
+  const eventId = `sess${s.id.replace(/-/g, '')}`.slice(0, 1024);
+  const subjectName = s.subjects?.name ?? 'Class';
+  const startDateTime = `${s.session_date}T${s.start_time}`;
+  const endDateTime = `${s.session_date}T${s.end_time}`;
+
+  const eventBody = {
+    summary: subjectName,
+    location: s.room ?? undefined,
+    start: { dateTime: startDateTime, timeZone: 'Asia/Kolkata' },
+    end: { dateTime: endDateTime, timeZone: 'Asia/Kolkata' }
+  };
+
+  try {
+    await calendar.events.insert({ calendarId: 'primary', requestBody: { id: eventId, ...eventBody } });
+  } catch (err: any) {
+    if (err?.code === 409) {
+      // Already exists from a previous push — update instead of duplicating.
+      await calendar.events.update({ calendarId: 'primary', eventId, requestBody: eventBody });
+    } else {
+      throw err;
+    }
+  }
+}
 
 export async function pushScheduleToCalendar(studentId: string) {
   // Hardcoded to TERM_5 (MBA2) below — an MBA1 student calling this today would just
@@ -61,30 +97,17 @@ export async function pushScheduleToCalendar(studentId: string) {
     enrolledKeys.has(`${s.subject_id}::${s.section_id ?? 'null'}`)
   );
 
-  for (const s of sessions) {
-    // Calendar event IDs must be lowercase base32hex (a-v, 0-9), no dashes — a session's
-    // UUID hex characters (0-9a-f) already satisfy that once dashes are stripped.
-    const eventId = `sess${s.id.replace(/-/g, '')}`.slice(0, 1024);
-    const subjectName = (s.subjects as any)?.name ?? 'Class';
-    const startDateTime = `${s.session_date}T${s.start_time}`;
-    const endDateTime = `${s.session_date}T${s.end_time}`;
-
-    const eventBody = {
-      summary: subjectName,
-      location: s.room ?? undefined,
-      start: { dateTime: startDateTime, timeZone: 'Asia/Kolkata' },
-      end: { dateTime: endDateTime, timeZone: 'Asia/Kolkata' }
-    };
-
-    try {
-      await calendar.events.insert({ calendarId: 'primary', requestBody: { id: eventId, ...eventBody } });
-    } catch (err: any) {
-      if (err?.code === 409) {
-        // Already exists from a previous push — update instead of duplicating.
-        await calendar.events.update({ calendarId: 'primary', eventId, requestBody: eventBody });
-      } else {
-        throw err;
-      }
-    }
+  // Pushed with bounded concurrency, not one session at a time — sequential awaiting was
+  // the actual cause of "Failed to fetch" errors students were seeing. A typical student's
+  // course load (~6 subjects, ~120 sessions for the term) sequentially takes 20-40+
+  // seconds even at a fast ~200-300ms per Google Calendar API call, which blows past
+  // Vercel's function timeout; the connection gets killed mid-request, and the browser
+  // reports that as a generic network failure rather than a real error response. 10 at a
+  // time keeps wall-clock time to a few seconds regardless of course load, while staying
+  // comfortably under Google Calendar API's per-user rate limits.
+  const CONCURRENCY = 10;
+  for (let i = 0; i < sessions.length; i += CONCURRENCY) {
+    const chunk = sessions.slice(i, i + CONCURRENCY);
+    await Promise.all(chunk.map((s) => pushOneSession(calendar, s as unknown as SessionToPush)));
   }
 }
