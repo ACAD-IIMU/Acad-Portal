@@ -28,8 +28,8 @@ export async function POST() {
   }
 
   try {
-    await pushScheduleToCalendar(student.id);
-    return NextResponse.json({ ok: true });
+    const result = await pushScheduleToCalendar(student.id);
+    return NextResponse.json({ ok: true, ...result });
   } catch (err: any) {
     console.error('Calendar push failed:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });

@@ -83,8 +83,11 @@ function isRateLimitError(err: any): boolean {
 // Google's own prescribed fix for rateLimitExceeded/userRateLimitExceeded is exponential
 // backoff — this is that, with jitter so that several chunk-members hitting the limit at
 // the same instant don't all retry at exactly the same instant again and immediately
-// re-trigger it.
-const MAX_RETRIES = 5;
+// re-trigger it. Capped at 3 (not 5) retries — worst case per call is now ~3.5s
+// (500+1000+2000ms) instead of ~15.5s. That matters for the overall time budget below:
+// a single unlucky call retrying all the way out used to be able to eat a third of the
+// entire function's time budget on its own.
+const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
 
 async function withBackoff<T>(fn: () => Promise<T>): Promise<T> {
@@ -178,7 +181,28 @@ async function pushOneImportantEvent(calendar: calendar_v3.Calendar, e: Importan
   }
 }
 
-export async function pushScheduleToCalendar(studentId: string) {
+export type PushResult = {
+  sessionsPushed: number;
+  sessionsTotal: number;
+  eventsPushed: number;
+  eventsTotal: number;
+  timedOut: boolean;
+};
+
+// Leaves ~10s of margin under the calendar/push route's maxDuration=60 ceiling — for
+// response overhead, and because a chunk already in flight when the budget is checked is
+// allowed to finish rather than being cut off mid-call. Every push here is idempotent
+// (insert-or-update-on-conflict), so stopping early and picking up the rest on a second
+// click is always safe — no risk of double-booking or corrupt state, just "not finished
+// yet." This is what actually fixes the platform-level kill: previously nothing bounded
+// the TOTAL time across every chunk's retries, so a few unlucky rate-limited calls could
+// still blow well past 60s even though each individual retry was capped.
+const FUNCTION_TIME_BUDGET_MS = 50_000;
+
+export async function pushScheduleToCalendar(studentId: string): Promise<PushResult> {
+  const startedAt = Date.now();
+  const overBudget = () => Date.now() - startedAt > FUNCTION_TIME_BUDGET_MS;
+
   // Hardcoded to TERM_5 (MBA2) below — an MBA1 student calling this today would just
   // find zero enrollments for Term V and get nothing pushed (harmless, not broken), but
   // this function doesn't yet know how to push MBA1's own current term. Needs the same
@@ -217,7 +241,7 @@ export async function pushScheduleToCalendar(studentId: string) {
     .eq('term', TERM_5);
 
   if (!enrollments || enrollments.length === 0) {
-    return; // Not enrolled in anything this term — nothing to push.
+    return { sessionsPushed: 0, sessionsTotal: 0, eventsPushed: 0, eventsTotal: 0, timedOut: false };
   }
 
   const enrolledKeys = new Set(
@@ -233,30 +257,36 @@ export async function pushScheduleToCalendar(studentId: string) {
     enrolledKeys.has(`${s.subject_id}::${s.section_id ?? 'null'}`)
   );
 
-  // Bounded concurrency AND paced between chunks — concurrency alone (the previous fix)
-  // solved the timeout, but firing 10 inserts in the exact same instant is itself the
-  // burst pattern that trips Google's rate limiter, separately from the timeout problem.
-  // Lower concurrency + a short pause between chunks smooths the burst; withBackoff above
-  // is the safety net for whatever still slips through.
+  // Bounded concurrency AND paced between chunks — concurrency alone (an earlier fix)
+  // solved the original hard timeout, but firing many inserts in the exact same instant
+  // is itself the burst pattern that trips Google's rate limiter, separately from the
+  // timeout problem. Lower concurrency + a short pause between chunks smooths the burst;
+  // withBackoff is the safety net for whatever still slips through; the time-budget check
+  // below is the outer safety net for when even that isn't enough within one request.
   const CONCURRENCY = 5;
   const CHUNK_PAUSE_MS = 150;
+  let sessionsPushed = 0;
+  let timedOut = false;
+
   for (let i = 0; i < sessions.length; i += CONCURRENCY) {
+    if (overBudget()) {
+      timedOut = true;
+      break;
+    }
     const chunk = sessions.slice(i, i + CONCURRENCY);
     await Promise.all(chunk.map((s) => pushOneSession(calendar, s as unknown as SessionToPush)));
+    sessionsPushed += chunk.length;
     if (i + CONCURRENCY < sessions.length) {
       await new Promise((resolve) => setTimeout(resolve, CHUNK_PAUSE_MS));
     }
   }
 
   // Registration, quizzes, endterm exams — these live in `important_events`, not
-  // `sessions`, and were never included in the push at all until now (the actual gap:
-  // students saw these on the Home page calendar but never in their own Google Calendar
-  // no matter how many times they clicked "Add to Google Calendar"). Same visibility rule
-  // as the important_events RLS policy: events with no subject (Registration, Tutorial —
-  // genuinely apply to everyone) go out to every student regardless of enrollment;
-  // subject-linked events (quizzes, endterm exams) are scoped to this student's own
-  // enrolled subjects. No section_id on this table — an exam applies to every section of
-  // a subject together, so subject_id alone is enough, unlike the session match above.
+  // `sessions`. Same visibility rule as the important_events RLS policy: events with no
+  // subject (Registration, Tutorial — genuinely apply to everyone) go out to every
+  // student regardless of enrollment; subject-linked events (quizzes, endterm exams) are
+  // scoped to this student's own enrolled subjects. No section_id on this table — an exam
+  // applies to every section of a subject together, so subject_id alone is enough.
   const enrolledSubjectIds = new Set(enrollments.map((e) => e.subject_id));
 
   const { data: allTermEvents } = await admin
@@ -268,11 +298,28 @@ export async function pushScheduleToCalendar(studentId: string) {
     (e) => e.subject_id === null || enrolledSubjectIds.has(e.subject_id)
   ) as unknown as ImportantEventToPush[];
 
-  for (let i = 0; i < eventsToPush.length; i += CONCURRENCY) {
-    const chunk = eventsToPush.slice(i, i + CONCURRENCY);
-    await Promise.all(chunk.map((e) => pushOneImportantEvent(calendar, e)));
-    if (i + CONCURRENCY < eventsToPush.length) {
-      await new Promise((resolve) => setTimeout(resolve, CHUNK_PAUSE_MS));
+  let eventsPushed = 0;
+
+  if (!timedOut) {
+    for (let i = 0; i < eventsToPush.length; i += CONCURRENCY) {
+      if (overBudget()) {
+        timedOut = true;
+        break;
+      }
+      const chunk = eventsToPush.slice(i, i + CONCURRENCY);
+      await Promise.all(chunk.map((e) => pushOneImportantEvent(calendar, e)));
+      eventsPushed += chunk.length;
+      if (i + CONCURRENCY < eventsToPush.length) {
+        await new Promise((resolve) => setTimeout(resolve, CHUNK_PAUSE_MS));
+      }
     }
   }
+
+  return {
+    sessionsPushed,
+    sessionsTotal: sessions.length,
+    eventsPushed,
+    eventsTotal: eventsToPush.length,
+    timedOut
+  };
 }

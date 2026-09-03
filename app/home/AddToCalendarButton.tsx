@@ -9,7 +9,7 @@ import { useState } from 'react';
 // login (see app/login/page.tsx), not incrementally, so this can call the route
 // directly without triggering its own separate OAuth consent screen.
 export default function AddToCalendarButton() {
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'partial' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   async function handleClick() {
@@ -21,7 +21,12 @@ export default function AddToCalendarButton() {
       if (!res.ok || data?.error) {
         throw new Error(data?.error ?? 'Something went wrong');
       }
-      setStatus('success');
+      // A full run can occasionally run out of time on a very large course load — every
+      // push is idempotent (insert-or-update), so stopping partway through and finishing
+      // on a second click is always safe, never duplicates or corrupts anything already
+      // added. Surfacing this honestly rather than just saying "Added ✓" when it isn't
+      // actually finished yet.
+      setStatus(data?.timedOut ? 'partial' : 'success');
     } catch (err: any) {
       setStatus('error');
       setErrorMessage(err?.message ?? null);
@@ -40,6 +45,11 @@ export default function AddToCalendarButton() {
       {status === 'success' && (
         <span id="gcal-status" className="text-xs font-semibold text-brand-700">
           Added to your calendar ✓
+        </span>
+      )}
+      {status === 'partial' && (
+        <span id="gcal-status" className="text-xs font-semibold text-brand-700">
+          Added most of your calendar — click again to finish the rest.
         </span>
       )}
       {status === 'error' && (
