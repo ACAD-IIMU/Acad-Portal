@@ -11,6 +11,56 @@ type SessionToPush = {
   subjects: { name: string } | null;
 };
 
+type ImportantEventToPush = {
+  id: string;
+  event_date: string;
+  type: 'quiz' | 'endterm' | 'other';
+  label: string;
+};
+
+// Matches the exact suffix parseEvents.ts appends when a time was found in the source
+// sheet (`label += " — " + time`, time always formatted as e.g. "9:30 AM" — see
+// lib/parseEvents.ts). "Registration"/"Tutorial"/other non-subject events never get this
+// suffix at all (OTHER_EVENT_RE's branch never appends a time), which is exactly why
+// those fall through to the all-day path below rather than needing separate handling.
+const LABEL_TIME_SUFFIX_RE = / — (\d{1,2}):(\d{2}) (AM|PM)$/;
+
+const EVENT_DURATION_MINUTES: Record<ImportantEventToPush['type'], number> = {
+  endterm: 120,
+  quiz: 45,
+  other: 60 // rarely reached — "other" events essentially never carry a parsed time
+};
+
+function to24Hour(h: string, m: string, meridiem: string): string {
+  let hour = parseInt(h, 10) % 12;
+  if (meridiem === 'PM') hour += 12;
+  return `${String(hour).padStart(2, '0')}:${m}`;
+}
+
+// Adds minutes to a date+time pair, correctly rolling over into the next calendar day if
+// needed (a very long exam starting late at night, say). Uses Date.UTC/getUTC* purely as
+// a calendar-day calculator (month lengths, leap years) — never attaching any real time-
+// of-day or IST offset to it, which matters here: anchoring at IST midnight the way
+// lib/parseTimetable.ts does would put that instant in the PREVIOUS day in UTC terms
+// (IST is ahead of UTC), so reading the date back via toISOString() would silently
+// recover the wrong calendar day even with zero rollover. Pure Y-M-D arithmetic sidesteps
+// that entirely.
+function addMinutes(dateStr: string, timeStr: string, minutesToAdd: number): { date: string; time: string } {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [h, m] = timeStr.split(':').map(Number);
+  let totalMinutes = h * 60 + m + minutesToAdd;
+  let dayOffset = 0;
+  while (totalMinutes >= 24 * 60) {
+    totalMinutes -= 24 * 60;
+    dayOffset += 1;
+  }
+  const newHour = Math.floor(totalMinutes / 60);
+  const newMinute = totalMinutes % 60;
+  const rolled = new Date(Date.UTC(year, month - 1, day + dayOffset));
+  const newDate = `${rolled.getUTCFullYear()}-${String(rolled.getUTCMonth() + 1).padStart(2, '0')}-${String(rolled.getUTCDate()).padStart(2, '0')}`;
+  return { date: newDate, time: `${String(newHour).padStart(2, '0')}:${String(newMinute).padStart(2, '0')}` };
+}
+
 // Google's Calendar API returns this specifically for bursts — "the maximum request rate
 // per calendar or per authenticated user" (their own wording), a distinct, tighter limit
 // from the aggregate per-minute quota. Sending several inserts in the exact same instant
@@ -71,6 +121,56 @@ async function pushOneSession(calendar: calendar_v3.Calendar, s: SessionToPush) 
   } catch (err: any) {
     if (err?.code === 409) {
       // Already exists from a previous push — update instead of duplicating.
+      await withBackoff(() => calendar.events.update({ calendarId: 'primary', eventId, requestBody: eventBody }));
+    } else {
+      throw err;
+    }
+  }
+}
+
+async function pushOneImportantEvent(calendar: calendar_v3.Calendar, e: ImportantEventToPush) {
+  // Distinct prefix from sessions/reminders — an important_events UUID could otherwise
+  // theoretically collide hex-for-hex with a session or reminder UUID once dashes are
+  // stripped, however unlikely; keeping every pushed-thing's id namespace separate rules
+  // that out entirely rather than relying on it being improbable.
+  const eventId = `evt${e.id.replace(/-/g, '')}`.slice(0, 1024);
+
+  const timeMatch = e.label.match(LABEL_TIME_SUFFIX_RE);
+  let eventBody: calendar_v3.Schema$Event;
+
+  if (timeMatch) {
+    // A real time was parsed from the source sheet — strip the "— 9:30 AM" suffix from
+    // the title (it becomes the event's actual start time instead) and build a proper
+    // timed block. Duration is a reasonable default per type, not a real end time —
+    // important_events has no end-time column, only a single point pulled from the
+    // sheet's text.
+    const [, h, m, meridiem] = timeMatch;
+    const startTime = to24Hour(h, m, meridiem);
+    const { date: endDate, time: endTime } = addMinutes(e.event_date, startTime, EVENT_DURATION_MINUTES[e.type]);
+
+    eventBody = {
+      summary: e.label.replace(LABEL_TIME_SUFFIX_RE, ''),
+      start: { dateTime: `${e.event_date}T${startTime}:00`, timeZone: 'Asia/Kolkata' },
+      end: { dateTime: `${endDate}T${endTime}:00`, timeZone: 'Asia/Kolkata' }
+    };
+  } else {
+    // No time available (this is the normal case for Registration, Tutorial, and other
+    // non-subject-specific events — see OTHER_EVENT_RE's comment above) — an all-day
+    // event on the known date is still far more useful than not appearing at all, which
+    // was the actual gap being fixed here.
+    eventBody = {
+      summary: e.label,
+      start: { date: e.event_date },
+      end: { date: e.event_date }
+    };
+  }
+
+  try {
+    await withBackoff(() =>
+      calendar.events.insert({ calendarId: 'primary', requestBody: { id: eventId, ...eventBody } })
+    );
+  } catch (err: any) {
+    if (err?.code === 409) {
       await withBackoff(() => calendar.events.update({ calendarId: 'primary', eventId, requestBody: eventBody }));
     } else {
       throw err;
@@ -144,6 +244,34 @@ export async function pushScheduleToCalendar(studentId: string) {
     const chunk = sessions.slice(i, i + CONCURRENCY);
     await Promise.all(chunk.map((s) => pushOneSession(calendar, s as unknown as SessionToPush)));
     if (i + CONCURRENCY < sessions.length) {
+      await new Promise((resolve) => setTimeout(resolve, CHUNK_PAUSE_MS));
+    }
+  }
+
+  // Registration, quizzes, endterm exams — these live in `important_events`, not
+  // `sessions`, and were never included in the push at all until now (the actual gap:
+  // students saw these on the Home page calendar but never in their own Google Calendar
+  // no matter how many times they clicked "Add to Google Calendar"). Same visibility rule
+  // as the important_events RLS policy: events with no subject (Registration, Tutorial —
+  // genuinely apply to everyone) go out to every student regardless of enrollment;
+  // subject-linked events (quizzes, endterm exams) are scoped to this student's own
+  // enrolled subjects. No section_id on this table — an exam applies to every section of
+  // a subject together, so subject_id alone is enough, unlike the session match above.
+  const enrolledSubjectIds = new Set(enrollments.map((e) => e.subject_id));
+
+  const { data: allTermEvents } = await admin
+    .from('important_events')
+    .select('id, event_date, type, label, subject_id')
+    .eq('term', TERM_5);
+
+  const eventsToPush = (allTermEvents ?? []).filter(
+    (e) => e.subject_id === null || enrolledSubjectIds.has(e.subject_id)
+  ) as unknown as ImportantEventToPush[];
+
+  for (let i = 0; i < eventsToPush.length; i += CONCURRENCY) {
+    const chunk = eventsToPush.slice(i, i + CONCURRENCY);
+    await Promise.all(chunk.map((e) => pushOneImportantEvent(calendar, e)));
+    if (i + CONCURRENCY < eventsToPush.length) {
       await new Promise((resolve) => setTimeout(resolve, CHUNK_PAUSE_MS));
     }
   }
