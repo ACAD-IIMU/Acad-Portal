@@ -11,6 +11,44 @@ type SessionToPush = {
   subjects: { name: string } | null;
 };
 
+// Google's Calendar API returns this specifically for bursts — "the maximum request rate
+// per calendar or per authenticated user" (their own wording), a distinct, tighter limit
+// from the aggregate per-minute quota. Sending several inserts in the exact same instant
+// (as a Promise.all chunk does) is exactly the shape that trips it, even when total
+// volume is nowhere near the real per-minute cap. Detected defensively across a few
+// possible error shapes since the googleapis client's error structure isn't fully stable
+// across versions — falling back to matching the message text if the structured fields
+// aren't where expected.
+function isRateLimitError(err: any): boolean {
+  const status = err?.code ?? err?.status ?? err?.response?.status;
+  if (status === 429) return true;
+  if (status !== 403) return false;
+  const reason =
+    err?.errors?.[0]?.reason ?? err?.response?.data?.error?.errors?.[0]?.reason ?? '';
+  if (reason === 'rateLimitExceeded' || reason === 'userRateLimitExceeded') return true;
+  const message = String(err?.message ?? err?.response?.data?.error?.message ?? '');
+  return /rate limit/i.test(message);
+}
+
+// Google's own prescribed fix for rateLimitExceeded/userRateLimitExceeded is exponential
+// backoff — this is that, with jitter so that several chunk-members hitting the limit at
+// the same instant don't all retry at exactly the same instant again and immediately
+// re-trigger it.
+const MAX_RETRIES = 5;
+const BASE_DELAY_MS = 500;
+
+async function withBackoff<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isRateLimitError(err) || attempt >= MAX_RETRIES) throw err;
+      const delay = BASE_DELAY_MS * 2 ** attempt + Math.random() * 250;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 async function pushOneSession(calendar: calendar_v3.Calendar, s: SessionToPush) {
   // Calendar event IDs must be lowercase base32hex (a-v, 0-9), no dashes — a session's
   // UUID hex characters (0-9a-f) already satisfy that once dashes are stripped.
@@ -27,11 +65,13 @@ async function pushOneSession(calendar: calendar_v3.Calendar, s: SessionToPush) 
   };
 
   try {
-    await calendar.events.insert({ calendarId: 'primary', requestBody: { id: eventId, ...eventBody } });
+    await withBackoff(() =>
+      calendar.events.insert({ calendarId: 'primary', requestBody: { id: eventId, ...eventBody } })
+    );
   } catch (err: any) {
     if (err?.code === 409) {
       // Already exists from a previous push — update instead of duplicating.
-      await calendar.events.update({ calendarId: 'primary', eventId, requestBody: eventBody });
+      await withBackoff(() => calendar.events.update({ calendarId: 'primary', eventId, requestBody: eventBody }));
     } else {
       throw err;
     }
@@ -66,10 +106,6 @@ export async function pushScheduleToCalendar(studentId: string) {
   // This function uses the admin (service-role) client, which bypasses RLS — so unlike
   // every other query in the app, the enrollment scoping normally handled automatically
   // by the "students see sessions they're enrolled in" RLS policy does NOT apply here.
-  // Previously this queried `sessions` directly by a hardcoded date range with no student
-  // filter at all, which meant every click pushed every section's every session in that
-  // window into the clicking student's calendar, not just their own.
-  //
   // Fix: replicate the RLS policy's join explicitly — fetch this student's own enrollments
   // for TERM_5, then keep only sessions matching (subject_id, section_id) from that
   // set, same null-safe section match the policy uses (a subject with no sectioning has
@@ -97,17 +133,18 @@ export async function pushScheduleToCalendar(studentId: string) {
     enrolledKeys.has(`${s.subject_id}::${s.section_id ?? 'null'}`)
   );
 
-  // Pushed with bounded concurrency, not one session at a time — sequential awaiting was
-  // the actual cause of "Failed to fetch" errors students were seeing. A typical student's
-  // course load (~6 subjects, ~120 sessions for the term) sequentially takes 20-40+
-  // seconds even at a fast ~200-300ms per Google Calendar API call, which blows past
-  // Vercel's function timeout; the connection gets killed mid-request, and the browser
-  // reports that as a generic network failure rather than a real error response. 10 at a
-  // time keeps wall-clock time to a few seconds regardless of course load, while staying
-  // comfortably under Google Calendar API's per-user rate limits.
-  const CONCURRENCY = 10;
+  // Bounded concurrency AND paced between chunks — concurrency alone (the previous fix)
+  // solved the timeout, but firing 10 inserts in the exact same instant is itself the
+  // burst pattern that trips Google's rate limiter, separately from the timeout problem.
+  // Lower concurrency + a short pause between chunks smooths the burst; withBackoff above
+  // is the safety net for whatever still slips through.
+  const CONCURRENCY = 5;
+  const CHUNK_PAUSE_MS = 150;
   for (let i = 0; i < sessions.length; i += CONCURRENCY) {
     const chunk = sessions.slice(i, i + CONCURRENCY);
     await Promise.all(chunk.map((s) => pushOneSession(calendar, s as unknown as SessionToPush)));
+    if (i + CONCURRENCY < sessions.length) {
+      await new Promise((resolve) => setTimeout(resolve, CHUNK_PAUSE_MS));
+    }
   }
 }
