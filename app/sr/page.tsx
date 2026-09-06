@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { formatTime12h } from '@/lib/formatTime';
 
 type Preread = { id: string; file_name: string; drive_file_id: string; uploaded_at: string };
@@ -85,7 +86,10 @@ export default function SrUploadPage() {
 
   if (!isSr) {
     return (
-      <main className="max-w-3xl mx-auto px-4 py-10">
+      <main className="max-w-3xl mx-auto px-4 py-10 flex flex-col gap-4">
+        <Link href="/home" className="text-sm font-semibold text-brand-700 hover:underline w-fit">
+          ← Back to Home
+        </Link>
         <p className="text-inkFaint text-sm">
           This page is only for Subject Representatives. You&apos;re not currently assigned as an SR
           for any subject.
@@ -96,6 +100,9 @@ export default function SrUploadPage() {
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-8 flex flex-col gap-5">
+      <Link href="/home" className="text-sm font-semibold text-brand-700 hover:underline w-fit">
+        ← Back to Home
+      </Link>
       <div>
         <h1 className="text-2xl">SR Tools</h1>
         <p className="text-inkFaint text-sm">Upload prereads and post announcements for your subject(s).</p>
