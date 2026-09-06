@@ -7,12 +7,13 @@
 
 const TERM = 'Term V';
 
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 import UserMenu from '@/components/UserMenu';
 import NominationForm from './NominationForm';
 import VotingForm from './VotingForm';
 import SrElectionsTabs from './Tabs';
+import Results from './Results';
 import type { ReactNode } from 'react';
 
 // Per-student data (own enrollments, own nomination state) — never cache/serve stale.
@@ -132,11 +133,38 @@ export default async function SrElectionsPage() {
 
   const votingContent = <VotingForm term={TERM} />;
 
+  // Results: read from sr_assignments directly (not re-derived from votes) — this is
+  // the exact table that grants real SR access site-wide, so the list shown here can
+  // never drift from who actually has SR permissions. Uses the admin client
+  // deliberately: this is public-within-the-portal information (which student
+  // represents which subject+section), not scoped to the viewer's own data the way
+  // every other query on this page is, so the regular per-request client — which
+  // would only ever see rows RLS allows for the logged-in student — isn't the right
+  // tool here.
+  const admin = createAdminClient();
+  const { data: srAssignments } = await admin
+    .from('sr_assignments')
+    .select('subjects(name), sections(section_label), students(full_name, reg_no, email, phone)')
+    .eq('term', TERM);
+
+  const resultsRows = (srAssignments ?? [])
+    .map((r: any) => ({
+      subjectName: r.subjects?.name ?? '—',
+      sectionLabel: r.sections?.section_label ?? null,
+      fullName: r.students?.full_name ?? '—',
+      regNo: r.students?.reg_no ?? '—',
+      email: r.students?.email ?? '—',
+      phone: r.students?.phone ?? null
+    }))
+    .sort((a, b) => a.subjectName.localeCompare(b.subjectName) || (a.sectionLabel ?? '').localeCompare(b.sectionLabel ?? ''));
+
+  const resultsContent = <Results rows={resultsRows} />;
+
   return (
     <Shell batchLabel={student.batch_label} userMenu={userMenu}>
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl">SR Elections — {TERM}</h1>
-        <SrElectionsTabs nomination={nominationContent} voting={votingContent} />
+        <SrElectionsTabs nomination={nominationContent} voting={votingContent} results={resultsContent} />
       </div>
     </Shell>
   );
