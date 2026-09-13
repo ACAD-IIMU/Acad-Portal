@@ -11,6 +11,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.111.0",
+    "@vercel/analytics": "^2.0.1",
     "fast-xml-parser": "^5.10.1",
     "googleapis": "^144.0.0",
     "jszip": "^3.10.1",
