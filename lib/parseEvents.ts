@@ -15,8 +15,67 @@ const KEYWORD_RE = /(Quiz|Mid\s*Term\s*Exam|End\s*Term\s*Exam)/gi;
 // End-of-term block shorthand: "MoB => 9.30 am", "CV & TS:ADR => 9.30 am"
 const ARROW_EXAM_RE = /([A-Za-z0-9:&.()\s]+?)\s*=>\s*(\d{1,2}[.:]\d{2}\s*[ap]m)/gi;
 
-// Other recognized one-off event types that don't have a Quiz/Exam keyword
-const OTHER_EVENT_RE = /(Registration|Tutorial\s*\d*|Guest\s*Session|Additional\s*Session|Independence\s*Day)/i;
+// Other recognized one-off event types that don't have a Quiz/Exam keyword.
+// "Independence Day" used to live here; it moved into NON_TEACHING_DAYS below, so every
+// holiday is labelled the same way instead of one being an "other" event and the rest
+// falling through to unmapped.
+const OTHER_EVENT_RE = /(Registration|Tutorial\s*\d*|Guest\s*Session|Additional\s*Session)/i;
+
+// Non-teaching days and campus-wide events. These appear in the timetable as a bare name
+// in a session slot with no subject code, no section and no "Sn" — so they never matched
+// the session pattern, and with no Quiz/Exam keyword they never matched an event pattern
+// either. They fell through to `stillUnmapped`, which meant a student saw an empty day on
+// Home with no explanation of why there was no class.
+//
+// Matched on the WHOLE cleaned cell text, not as a substring, so a subject or event whose
+// name merely contains one of these words can't be swallowed. Extend these two lists as
+// new names appear in a future term's sheet — that is the only change needed.
+const NON_TEACHING_DAYS = [
+  "Gandhi Jayanti",
+  "Dussehra",
+  "Diwali",
+  "Independence Day",
+  "Republic Day",
+  "Holi",
+  "Christmas"
+];
+
+const CAMPUS_EVENTS = [
+  "Solaris",    // the institute's annual cultural fest
+  "Field Visit"
+];
+
+/** Normalizes a cell fragment for whole-text comparison against the lists above: drops the
+ * "=>" arrow prefix the sheet uses on some entries (real data: "=> Field Visit"), strips
+ * stray leading/trailing dashes and punctuation, and collapses internal whitespace. */
+function normalizeForNameMatch(text: string): string {
+  return text
+    .replace(/^\s*=>\s*/, "")
+    .replace(/^[\s\-–—:]+/, "")
+    .replace(/[\s\-–—:.]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function matchNamedDay(
+  rawText: string
+): { type: "other"; label: string; subjectCodeRaw: null } | null {
+  const cleaned = normalizeForNameMatch(rawText);
+  if (!cleaned) return null;
+
+  const holiday = NON_TEACHING_DAYS.find((h) => h.toLowerCase() === cleaned);
+  if (holiday) {
+    return { type: "other", label: `Holiday — ${holiday}`, subjectCodeRaw: null };
+  }
+
+  const campusEvent = CAMPUS_EVENTS.find((c) => c.toLowerCase() === cleaned);
+  if (campusEvent) {
+    return { type: "other", label: `Campus Event — ${campusEvent}`, subjectCodeRaw: null };
+  }
+
+  return null;
+}
 
 function classifyType(keyword: string): "quiz" | "endterm" | "other" {
   const k = keyword.toLowerCase();
@@ -46,6 +105,13 @@ function stripLeadingNoise(text: string): string {
 function extractEventsFromText(
   rawText: string
 ): Array<{ subjectCodeRaw: string | null; type: "quiz" | "endterm" | "other"; label: string }> {
+  // Pass 0: whole-cell named days (holidays, campus events). Runs FIRST, before the
+  // keyword passes, so a holiday name can never be partially consumed by a later pattern
+  // and so these produce one clean subject-less event each — batch-wide by definition,
+  // exactly like the existing subject-less "Registration" event.
+  const namedDay = matchNamedDay(rawText);
+  if (namedDay) return [namedDay];
+
   const keywordMatches = [...rawText.matchAll(new RegExp(KEYWORD_RE))];
 
   if (keywordMatches.length > 0) {

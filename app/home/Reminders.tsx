@@ -107,7 +107,18 @@ export default function Reminders({
           <p className="text-xs text-inkFaint italic">No upcoming quizzes or exams on the calendar.</p>
         )}
         {upcomingAcadDates.map((e) => {
-          const icon = e.type === 'endterm' ? '🎓' : '📝';
+          // Holidays and campus events are labelled with a fixed prefix by the sync's
+          // event classifier (parseEvents.ts), which is the only thing distinguishing them
+          // from a quiz — all three share type 'other', since `important_events.type` is
+          // constrained to quiz/endterm/other and adding a fourth value would mean a DB
+          // constraint change for a purely cosmetic difference.
+          const icon = e.type === 'endterm'
+            ? '🎓'
+            : e.label.startsWith('Holiday —')
+              ? '🎉'
+              : e.label.startsWith('Campus Event —')
+                ? '📍'
+                : '📝';
           const when = e.daysAway === 0 ? 'today' : e.daysAway === 1 ? 'tomorrow' : `in ${e.daysAway} days`;
           const dateLabel = new Date(`${e.event_date}T00:00:00+05:30`).toLocaleDateString('en-GB', {
             day: 'numeric',
