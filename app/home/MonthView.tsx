@@ -10,6 +10,7 @@ type SessionRow = {
   start_time: string;
   room: string | null;
   session_number: number;
+  session_label: string | null;
   subjects: { name: string } | null;
 };
 type EventRow = { id: string; event_date: string; type: string; label: string };
@@ -108,14 +109,15 @@ export default function MonthView({
   const monthLabel = `${MONTH_NAMES[m]} ${y}`;
 
   const eventsByDate = useMemo(() => {
-    const map: Record<string, { time?: string; label: string; flag?: string; room?: string | null; sessionNumber?: number }[]> = {};
+    const map: Record<string, { time?: string; label: string; flag?: string; room?: string | null; sessionNumber?: number; sessionLabel?: string | null }[]> = {};
     sessions.forEach((s) => {
       const key = s.session_date;
       (map[key] ??= []).push({
         time: formatTime12h(s.start_time),
         label: s.subjects?.name ?? 'Session',
         room: s.room,
-        sessionNumber: s.session_number
+        sessionNumber: s.session_number,
+        sessionLabel: s.session_label
       });
     });
     importantEvents.forEach((e) => {
@@ -231,7 +233,8 @@ export default function MonthView({
                     className="text-[10.5px] mt-0.5 px-1.5 py-0.5 rounded text-white truncate"
                     style={{ background: colorForSubject(e.label, uniqueSubjects) }}
                   >
-                    {e.time} {e.label}{e.sessionNumber ? ` S${e.sessionNumber}` : ''}
+                    {e.time} {e.label}
+                    {e.sessionLabel ? ` ${e.sessionLabel}` : e.sessionNumber ? ` S${e.sessionNumber}` : ''}
                   </div>
                 )
               )}
@@ -262,7 +265,7 @@ function DayOverlay({
   onClose
 }: {
   dateKey: string;
-  events: { time?: string; label: string; flag?: string; room?: string | null; sessionNumber?: number }[];
+  events: { time?: string; label: string; flag?: string; room?: string | null; sessionNumber?: number; sessionLabel?: string | null }[];
   subjectColors: string[];
   onClose: () => void;
 }) {
@@ -293,7 +296,11 @@ function DayOverlay({
                 <span className="font-mono text-xs text-inkFaint w-16 shrink-0">{e.time}</span>
                 <span className="flex-1">
                   {e.label}
-                  {e.sessionNumber ? <span className="text-inkFaint"> S{e.sessionNumber}</span> : ''}
+                  {e.sessionLabel ? (
+                    <span className="text-inkFaint"> {e.sessionLabel}</span>
+                  ) : e.sessionNumber ? (
+                    <span className="text-inkFaint"> S{e.sessionNumber}</span>
+                  ) : ''}
                 </span>
                 {e.room && <span className="text-xs text-inkFaint shrink-0">Room {e.room}</span>}
               </div>

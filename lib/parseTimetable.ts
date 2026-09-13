@@ -10,6 +10,10 @@ export interface ParsedSession {
   sessionDate: string;      // YYYY-MM-DD
   startTime: string;        // HH:MM (from the fixed 6-slot header)
   endTime: string;
+  // Human-readable name for a session that isn't part of the subject's numbered S1..Sn
+  // sequence — e.g. "COIL Interaction". Null for every normal class, where the number
+  // itself is the label ("S9"). See SPECIAL_SESSION_NAMES below.
+  sessionLabel: string | null;
 }
 
 export interface UnmappedEntry {
@@ -163,6 +167,44 @@ function extractSessionsFromChunk(
   }
 
   return { matches, leftover };
+}
+
+// Named one-off classes that belong to a real subject but carry no "Sn" number in the
+// sheet — real data: "IMC - COIL Interaction" (Collaborative Online International
+// Learning) on 18 Sep, 25 Sep and 1 Oct. These are genuine teaching sessions students
+// must attend, but because they have no session number, no section and no room, they
+// failed every session pattern and fell through to `unmapped`, so they never appeared on
+// anyone's timetable and the subject's SR had no card to attach a preread to.
+//
+// Deliberately an EXPLICIT allowlist rather than a general "{code} - {anything}" rule.
+// A loose rule would also swallow "Exam TBD", "Reserved" and "=> Field Visit", turning
+// placeholders and campus events into fake classes. Add a new name here when a new kind
+// of named session appears in a future term's sheet — that is the only change needed.
+const SPECIAL_SESSION_NAMES = ["COIL Interaction"];
+
+const SPECIAL_SESSION_RE = new RegExp(
+  `^(.*?)\\s*(?:\\(([A-Z])\\))?\\s*-\\s*(${SPECIAL_SESSION_NAMES.map((n) =>
+    n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")
+  ).join("|")})\\s*(?:\\(([^)]+)\\))?$`,
+  "i"
+);
+
+// Session numbers for the above. The natural key that `sync_sessions_for_term` upserts on
+// is (subject_id, section_id, term, session_number), so these still need A number — but it
+// must never collide with the subject's real S1..Sn, and it must be STABLE across syncs, or
+// every run would create a duplicate row and orphan any preread attached to the old one.
+//
+// Encoding the date and slot satisfies both: derived purely from where the entry sits in
+// the sheet, so re-running the sync always reproduces the same number, and starting at
+// 900000 puts it far above any real session number the sheet will ever contain. The number
+// is never shown to anyone — `session_label` is displayed in its place — so its size
+// doesn't matter, only its stability.
+const SPECIAL_SESSION_NUMBER_BASE = 900000;
+
+function specialSessionNumber(sessionDate: string, slotLabel: string): number {
+  const [, month, day] = sessionDate.split("-").map(Number);
+  const slotIndex = parseInt(slotLabel.replace(/\D/g, ""), 10) || 0;
+  return SPECIAL_SESSION_NUMBER_BASE + month * 10000 + day * 100 + slotIndex;
 }
 
 const NO_CLASS_MARKERS = new Set(["---", "<=>", "", "--", "End-Term Exams"]);
@@ -566,10 +608,35 @@ export async function parseTimetableWorkbook(buffer: Buffer, targetTerm: string)
             sessionDate,
             startTime: match.overrideStartTime ?? slot.startTime,
             endTime: match.overrideEndTime ?? slot.endTime,
+            sessionLabel: null,
           });
         }
 
         for (const stray of leftover) {
+          // Named one-off class (e.g. "IMC - COIL Interaction") — a real session for a real
+          // subject, just without an "Sn". Checked here, on the leftovers, rather than as
+          // another stage inside extractSessionsFromChunk, because the number it gets is
+          // derived from the date and slot, which only this loop knows about.
+          const specialMatch = stray.match(SPECIAL_SESSION_RE);
+          if (specialMatch) {
+            const [, rawCode, section, name, room] = specialMatch;
+            if (rawCode.trim()) {
+              const subjectCode = normalizeCode(rawCode.trim());
+              sessions.push({
+                subjectCode,
+                rawCode: rawCode.trim(),
+                sectionLabel: section ?? null,
+                sessionNumber: specialSessionNumber(sessionDate, slot.label),
+                room: room?.trim() || null,
+                sessionDate,
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+                sessionLabel: name.replace(/\s+/g, " ").trim(),
+              });
+              continue;
+            }
+          }
+
           unmapped.push({
             sessionDate,
             slotLabel: slot.label,

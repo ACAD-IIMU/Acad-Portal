@@ -97,6 +97,7 @@ export async function GET(req: Request) {
     start_time: string;
     end_time: string;
     room: string | null;
+    session_label: string | null;
   }> = [];
   const unresolvedSubjects: string[] = [];
 
@@ -119,6 +120,11 @@ export async function GET(req: Request) {
       start_time: s.startTime,
       end_time: s.endTime,
       room: s.room,
+      // Null for every normal numbered class; set only for named one-offs like
+      // "COIL Interaction" (see SPECIAL_SESSION_NAMES in lib/parseTimetable.ts).
+      // Requires the session_label column + the updated sync_sessions_for_term
+      // function — run the SQL migration BEFORE deploying this.
+      session_label: s.sessionLabel,
     });
   }
 

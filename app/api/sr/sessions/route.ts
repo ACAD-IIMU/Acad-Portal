@@ -28,7 +28,7 @@ export async function GET() {
   for (const a of assignments) {
     let query = supabase
       .from('sessions')
-      .select('id, session_date, start_time, end_time, room, session_number, no_preread, subjects(name), sections(section_label), prereads(id, file_name, drive_file_id, uploaded_at)')
+      .select('id, session_date, start_time, end_time, room, session_number, session_label, no_preread, subjects(name), sections(section_label), prereads(id, file_name, drive_file_id, uploaded_at)')
       .eq('subject_id', a.subject_id)
       .eq('term', a.term)
       .gte('session_date', today)

@@ -12,6 +12,7 @@ type SessionRow = {
   end_time: string;
   room: string | null;
   session_number: number;
+  session_label: string | null;
   no_preread: boolean;
   subjects: { name: string } | null;
   sections: { section_label: string | null } | null;
@@ -207,7 +208,12 @@ function SessionUploadCard({ session, onChanged }: { session: SessionRow; onChan
         <div>
           <b>{session.subjects?.name}</b>
           {session.sections?.section_label ? ` · Sec ${session.sections.section_label}` : ''}
-          <span className="text-inkFaint text-xs ml-2">S{session.session_number}</span>
+          {/* Named one-offs (e.g. "COIL Interaction") show their name; normal classes
+              show their sequence number. The stored number for a named session is a
+              synthetic date-derived value and must never be shown. */}
+          <span className="text-inkFaint text-xs ml-2">
+            {session.session_label ?? `S${session.session_number}`}
+          </span>
         </div>
         <span className="text-xs text-inkFaint">
           {dateLabel(session.session_date)} · {formatTime12h(session.start_time)}

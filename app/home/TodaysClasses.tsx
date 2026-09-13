@@ -12,6 +12,7 @@ type SessionRow = {
   room: string | null;
   no_preread: boolean;
   session_number: number;
+  session_label: string | null;
   subjects: { name: string } | null;
   sections: { section_label: string | null } | null;
   prereads: Preread[] | null;
@@ -145,7 +146,9 @@ export default function TodaysClasses({
               </div>
               <div className="flex-1">
                 <b>{s.subjects?.name}</b>
-                <span className="text-inkFaint text-xs ml-1.5">S{s.session_number}</span>
+                <span className="text-inkFaint text-xs ml-1.5">
+                  {s.session_label ?? `S${s.session_number}`}
+                </span>
                 <div className="text-sm text-inkSoft">
                   {s.faculty_name} · Room {s.room ?? 'TBD'}
                   {s.sections?.section_label ? ` · Sec ${s.sections.section_label}` : ''}
