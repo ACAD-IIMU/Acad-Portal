@@ -174,6 +174,44 @@ const COHORT_RE =
 // Term-II uses a hyphen -- both need to match without treating "-" as part of the code).
 const NUMBERED_RE = /^([A-Za-z][A-Za-z]*)\s*-?\s*(\d+)\s*$/;
 
+// End-Term exam week (confirmed directly: MBA1's Term I, roughly Sept 21-27) labels
+// each exam day with the subject's FULL course title instead of any code or keyword
+// at all -- e.g. "Financial Reporting and Analysis" sitting alone in Section A's
+// first column, with every other section's column blank that day (it isn't really
+// Section-A-specific, it's a whole-day note that happens to be written in that cell).
+// Confirmed against the legend table embedded in this same sheet (rows 111-129).
+// Hardcoded here rather than re-parsed from the legend at runtime -- a real option,
+// just more code than this one narrow, confirmed case justifies right now. If a
+// future term's legend renames a course, this map needs a matching manual update.
+const EXAM_WEEK_FULL_TITLE_TO_CODE: Record<string, string> = {
+  'financial reporting and analysis': 'FRA',
+  'statistics for management': 'SM',
+  'business ethics': 'BE',
+  'individual and group dynamics': 'IGD',
+  'microeconomics for managers': 'MEM',
+  'marketing management': 'MM',
+};
+
+export interface EndTermExamEntry {
+  subjectCode: string | null; // null for Capstone -- it isn't one of the 9 taught subjects
+  eventDate: string;
+  label: string; // pre-formatted, including the " — H:MM AM/PM" suffix when a time was found (see LABEL_TIME_SUFFIX_RE in lib/googleCalendar.ts) -- untimed (all-day) when not
+}
+
+// Loosely matches a time mention anywhere in a cell's text, e.g. "10 AM Onwards" or
+// "1:30 PM onwards" -- only ONE exam day (Sept 21) and Capstone actually state a time
+// anywhere in the row; the other 5 exam days don't, and are deliberately left as
+// all-day events rather than guessing they share Sept 21's stated time.
+const LOOSE_TIME_RE = /(\d{1,2})(?::(\d{2}))?\s*([AaPp])\.?[Mm]\.?/;
+function extractLooseTime(text: string): string | null {
+  const m = text.match(LOOSE_TIME_RE);
+  if (!m) return null;
+  const hour = m[1];
+  const minute = m[2] ?? '00';
+  const meridiem = m[3].toUpperCase() === 'A' ? 'AM' : 'PM';
+  return `${hour}:${minute} ${meridiem}`;
+}
+
 // Matches a bare subject code with NO number at all, optionally with a trailing
 // "- LAB" marker (e.g. "MOC", "Excel", "Excel - LAB"). The code itself is checked
 // against an EXPLICIT allowlist below, not accepted on pattern shape alone -- a
@@ -274,6 +312,7 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
   sessions: ParsedSession[];
   unmapped: UnmappedEntry[];
   skippedStrikethrough: UnmappedEntry[];
+  endTermExams: EndTermExamEntry[];
 }> {
   const wb = XLSX.read(buffer, { type: "buffer", cellStyles: true, cellHTML: true, cellDates: true });
 
@@ -296,6 +335,7 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
   const sessions: ParsedSession[] = [];
   const unmapped: UnmappedEntry[] = [];
   const skippedStrikethrough: UnmappedEntry[] = [];
+  const endTermExams: EndTermExamEntry[] = [];
 
   let currentResolvedMonth: number | null = null;
   let currentResolvedYear: number | null = null;
@@ -352,6 +392,41 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
       // and keep scanning this row's section columns for real content.
       if (!lastSessionDate) continue; // no prior date to carry forward -- nothing safe to attribute this row to
       sessionDate = lastSessionDate;
+    }
+
+    // End-Term exam week check -- see EXAM_WEEK_FULL_TITLE_TO_CODE above. The whole-
+    // day note always sits in the very first section's first slot column; checked
+    // once per row here, before the normal per-cell loop, rather than letting that
+    // cell fall through to it and land as a generic unmapped entry (which is what
+    // was happening before this was added -- confirmed directly, not theoretical).
+    const firstCellAddr = XLSX.utils.encode_cell({ r: row, c: groups[0].startCol });
+    const firstCellRaw = ws[firstCellAddr]?.v;
+    const firstCellText = firstCellRaw ? firstCellRaw.toString().replace(/\s+/g, ' ').trim() : '';
+    const firstCellLower = firstCellText.toLowerCase();
+    const examCode = EXAM_WEEK_FULL_TITLE_TO_CODE[firstCellLower];
+    const isCapstone = firstCellLower.startsWith('capstone');
+
+    if (examCode || isCapstone) {
+      // A time mention can appear either in this same cell (Capstone: "Capstone Exam
+      // (1:30 PM onwards)") or elsewhere in the row (Sept 21's separate "End-term
+      // Examination, 10 AM Onwards" annotation, in a different section's column) --
+      // checked across the whole row's used columns either way. Left untimed (all-
+      // day) when no time is found anywhere in the row, rather than assuming every
+      // exam day shares whichever day's time happened to be stated.
+      let looseTime: string | null = extractLooseTime(firstCellText);
+      if (!looseTime) {
+        for (let col = 0; col <= range.e.c && !looseTime; col++) {
+          const text = ws[XLSX.utils.encode_cell({ r: row, c: col })]?.v;
+          if (text) looseTime = extractLooseTime(text.toString());
+        }
+      }
+      const baseLabel = isCapstone ? 'Capstone Exam' : `${examCode} End-Term Exam`;
+      endTermExams.push({
+        subjectCode: isCapstone ? null : examCode,
+        eventDate: sessionDate,
+        label: looseTime ? `${baseLabel} — ${looseTime}` : baseLabel,
+      });
+      continue; // whole row handled -- every other cell is confirmed blank on these rows
     }
 
     for (const group of groups) {
@@ -455,5 +530,5 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
     }
   }
 
-  return { sessions, unmapped, skippedStrikethrough };
+  return { sessions, unmapped, skippedStrikethrough, endTermExams };
 }

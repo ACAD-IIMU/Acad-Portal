@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
 import { parseTimetableWorkbook, normalizeCode, ParsedSession, UnmappedEntry } from "@/lib/parseTimetable";
-import { parseGridTimetableWorkbook } from "@/lib/parseGridTimetable";
+import { parseGridTimetableWorkbook, EndTermExamEntry } from "@/lib/parseGridTimetable";
 import { extractEventsFromUnmapped } from "@/lib/parseEvents";
 import { TERM_5 } from "@/lib/term5";
 import { TERM_1 } from "@/lib/term1";
@@ -43,6 +43,10 @@ interface ParseResult {
   sessions: ParsedSession[];
   unmapped: UnmappedEntry[];
   skippedStrikethrough: UnmappedEntry[];
+  // Only ever populated by parseGridTimetableWorkbook (MBA1) -- optional so
+  // parseTimetableWorkbook's (MBA2) return type, which has no such concept, still
+  // satisfies this same shared interface without needing a matching empty field.
+  endTermExams?: EndTermExamEntry[];
 }
 
 const BATCH_CONFIGS: Record<
@@ -142,7 +146,7 @@ export async function GET(req: Request) {
   // 2) Parse it -- MBA2 uses the existing per-slot-column parser; MBA1 uses the
   //    section-block-column parser (see lib/parseGridTimetable.ts for why they're
   //    genuinely different grammars, not a config-swap of the same one).
-  const { sessions, unmapped, skippedStrikethrough } = await config.parse(buffer, TERM);
+  const { sessions, unmapped, skippedStrikethrough, endTermExams = [] } = await config.parse(buffer, TERM);
 
   // 3) Resolve subject_id / section_id via the tables already populated from the
   //    enrollment import. Now scoped by batch_label as well as term -- this is the
@@ -261,6 +265,23 @@ export async function GET(req: Request) {
         null
       : null
   }));
+
+  // MBA1-only: End-Term exam week entries (see lib/parseGridTimetable.ts) never go
+  // through extractEventsFromUnmapped above -- they're identified by matching a
+  // subject's full course title, not a Quiz/Exam keyword, so they need their own,
+  // separate mapping into the same row shape. Capstone's subjectCode is null by
+  // design (it isn't one of the 9 taught subjects), which subjectByNormCode.get
+  // already handles the same way a subject-less Registration/Tutorial event does.
+  eventRowsToInsert.push(
+    ...endTermExams.map((e) => ({
+      term: TERM,
+      batch_label: BATCH_LABEL,
+      event_date: e.eventDate,
+      type: "endterm" as const,
+      label: e.label,
+      subject_id: e.subjectCode ? subjectByNormCode.get(normalizeCode(e.subjectCode)) ?? null : null
+    }))
+  );
 
   // Guard against exactly what just happened: a parse that comes back with zero events
   // (wrong sheet, corrupted source data, etc.) should never wipe existing real events —
