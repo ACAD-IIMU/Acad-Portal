@@ -227,6 +227,7 @@ export async function GET(req: Request) {
   //    needed -- before relying on this for a second full academic cycle.
   const { data: syncResult, error: syncErr } = await supabase.rpc("sync_sessions_for_term", {
     target_term: TERM,
+    target_batch_label: BATCH_LABEL,
     rows: rowsToInsert,
   });
   if (syncErr) {
