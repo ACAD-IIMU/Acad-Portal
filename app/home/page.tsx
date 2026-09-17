@@ -12,10 +12,17 @@ import { TERM_1 } from '@/lib/term1';
 export const dynamic = 'force-dynamic';
 import UserMenu from '@/components/UserMenu';
 
-// Fallback only — used if no sessions exist yet for the term (e.g. before the timetable
-// sync has run). Once real sessions exist, the actual range below always wins.
-const FALLBACK_TERM_START = '2026-06-07';
-const FALLBACK_TERM_END = '2026-08-28';
+// Fallback only — used if no sessions are VISIBLE yet for this student's term (either
+// the sync genuinely hasn't run, or — the real cause right now for any MBA1 student —
+// the "students see sessions they're enrolled in" RLS policy hides every row because
+// `enrollments` for MBA1 doesn't exist yet). Split per cohort so an MBA1 student at
+// least sees their own real term window (from the source sheet's own title: "22nd
+// June - 26th September, 2026") while enrollments are still pending, instead of
+// silently inheriting MBA2's old placeholder dates.
+const FALLBACK_TERM_RANGES: Record<'MBA1' | 'MBA2', { start: string; end: string }> = {
+  MBA1: { start: '2026-06-22', end: '2026-09-26' },
+  MBA2: { start: '2026-06-07', end: '2026-08-28' },
+};
 
 export default async function HomePage() {
   const supabase = createClient();
@@ -70,8 +77,8 @@ export default async function HomePage() {
     .limit(1)
     .maybeSingle();
 
-  const TERM_START = earliestSession?.session_date ?? FALLBACK_TERM_START;
-  const TERM_END = latestSession?.session_date ?? FALLBACK_TERM_END;
+  const TERM_START = earliestSession?.session_date ?? FALLBACK_TERM_RANGES[isMba1 ? 'MBA1' : 'MBA2'].start;
+  const TERM_END = latestSession?.session_date ?? FALLBACK_TERM_RANGES[isMba1 ? 'MBA1' : 'MBA2'].end;
 
   const { data: todaysSessions } = await supabase
     .from('sessions')
