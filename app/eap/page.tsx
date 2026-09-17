@@ -55,16 +55,18 @@ type ComponentRow = {
 // student record) don't have a student to build it from.
 function Shell({
   batchLabel,
+  cohort,
   userMenu,
   children,
 }: {
   batchLabel?: string;
+  cohort?: string;
   userMenu?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-h-screen">
-      <Sidebar batchLabel={batchLabel} />
+      <Sidebar batchLabel={batchLabel} cohort={cohort} />
       <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8">
         {userMenu && <div className="flex justify-end mb-5">{userMenu}</div>}
         {children}
@@ -213,7 +215,7 @@ export default async function EapPointsPage() {
 
   const { data: student, error: studentError } = await supabase
     .from('students')
-    .select('full_name, reg_no, batch_label')
+    .select('full_name, reg_no, batch_label, cohort')
     .eq('auth_user_id', user.id)
     .single();
 
@@ -223,6 +225,29 @@ export default async function EapPointsPage() {
         <div className="card p-6">
           <p className="text-sm text-inkSoft">
             We couldn&apos;t find your student record. If this looks wrong, contact ACAD.
+          </p>
+        </div>
+      </Shell>
+    );
+  }
+
+  // EAP Bid Points is elective-bidding scoring (Fixed/Flexi Core/DER rounds/Mock
+  // Bidding etc, all keyed to BIDDING_TERM = Term V) — MBA1 doesn't reach electives
+  // this early in the program, and there's no MBA1 points data behind any of this
+  // yet regardless. Blocked here, before any of the Term V queries below run, rather
+  // than just hidden from the nav (see components/Sidebar.tsx's HIDDEN_FOR_MBA1) —
+  // a hidden link alone doesn't stop someone reaching this URL directly.
+  if (student.cohort === 'MBA1') {
+    const userMenu = (
+      <UserMenu name={student.full_name ?? 'Student'} regNo={student.reg_no} batchLabel={student.batch_label} />
+    );
+    return (
+      <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
+        <div className="card p-6">
+          <p className="text-sm text-inkSoft">
+            EAP Bid Points isn&apos;t available for your batch yet — this section covers elective
+            bidding, which opens later in the program. Check back once ACAD publishes it for MBA
+            2026-28.
           </p>
         </div>
       </Shell>
@@ -280,7 +305,7 @@ export default async function EapPointsPage() {
 
   if (!points) {
     return (
-      <Shell batchLabel={student.batch_label} userMenu={userMenu}>
+      <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
         <div className="card p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base">EAP Bid Points</h2>
@@ -327,7 +352,7 @@ export default async function EapPointsPage() {
   );
 
   return (
-    <Shell batchLabel={student.batch_label} userMenu={userMenu}>
+    <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
       {/* Total banner */}
       <div className="rounded-card p-8 mb-5 flex items-center justify-between gap-6 flex-wrap text-white bg-[linear-gradient(120deg,#2a0f16,#7a2331_55%,#702c4e)]">
         <div>

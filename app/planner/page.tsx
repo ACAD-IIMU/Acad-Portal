@@ -26,8 +26,33 @@ export default async function PlannerPage() {
   const supabase = createClient();
   const { data: student } = await supabase
     .from('students')
-    .select('full_name, reg_no, batch_label')
+    .select('full_name, reg_no, batch_label, cohort')
     .single();
+
+  // Term Planner's dataset is bundled from MBA2's timetable workbook (see the file
+  // header) and is fundamentally about planning elective bids ("before you bid" below)
+  // — not relevant to MBA1 yet, and no MBA1 version of this dataset has been generated.
+  // Blocked here rather than just hidden from the nav (components/Sidebar.tsx's
+  // HIDDEN_FOR_MBA1) so a direct URL doesn't show MBA2's course/elective data either.
+  if (student?.cohort === 'MBA1') {
+    return (
+      <div className="flex min-h-screen">
+        <Sidebar batchLabel={student.batch_label} cohort={student.cohort} />
+        <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8 flex flex-col gap-5">
+          <header className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl">Term Planner</h1>
+              <p className="text-inkFaint text-sm">
+                Not available for your batch yet — this covers elective planning, which opens
+                later in the program.
+              </p>
+            </div>
+            <UserMenu name={student.full_name ?? 'Student'} regNo={student.reg_no} batchLabel={student.batch_label} />
+          </header>
+        </main>
+      </div>
+    );
+  }
 
   const subjectCount = Object.keys(data.subject_sections).length;
   const sectionCount = Object.keys(data.courses).length;
@@ -39,7 +64,7 @@ export default async function PlannerPage() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar batchLabel={student?.batch_label} />
+      <Sidebar batchLabel={student?.batch_label} cohort={student?.cohort} />
       <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8 flex flex-col gap-5">
         <header className="flex items-start justify-between gap-4">
           <div>

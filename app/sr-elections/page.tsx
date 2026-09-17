@@ -21,16 +21,18 @@ export const dynamic = 'force-dynamic';
 
 function Shell({
   batchLabel,
+  cohort,
   userMenu,
   children
 }: {
   batchLabel?: string;
+  cohort?: string;
   userMenu?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-h-screen">
-      <Sidebar batchLabel={batchLabel} />
+      <Sidebar batchLabel={batchLabel} cohort={cohort} />
       <main className="flex-1 max-w-3xl mx-auto px-4 py-8 md:px-8">
         {userMenu && <div className="flex justify-end mb-5">{userMenu}</div>}
         {children}
@@ -57,6 +59,29 @@ export default async function SrElectionsPage() {
   const userMenu = (
     <UserMenu name={student.full_name} regNo={student.reg_no} batchLabel={student.batch_label} />
   );
+
+  // SR Elections is hardcoded to TERM = 'Term V' (MBA2) throughout this page, including
+  // the admin-client srAssignments query below that returns OTHER STUDENTS' names, roll
+  // numbers, emails, and phone numbers — that query is deliberately unscoped by viewer
+  // ("public-within-the-portal information", per its own comment), which stops being a
+  // safe assumption the moment a second cohort exists who shouldn't see MBA2's SR
+  // roster. Blocked here, before that query (or the nomination/enrollment ones) ever
+  // runs — this is the actual fix for a real MBA1 student having seen exactly that data
+  // (confirmed directly, not theoretical). Hiding the nav link alone (see
+  // components/Sidebar.tsx's HIDDEN_FOR_MBA1) would not have stopped this — that only
+  // covers arriving via the sidebar, not a bookmark, browser history, or a typed URL.
+  if (student.cohort === 'MBA1') {
+    return (
+      <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
+        <div className="card p-6">
+          <p className="text-sm text-inkSoft">
+            SR Elections isn&apos;t open for your batch yet. Check back once ACAD announces it for
+            MBA 2026-28.
+          </p>
+        </div>
+      </Shell>
+    );
+  }
 
   const { data: existingNominations } = await supabase
     .from('sr_nominations')
@@ -161,7 +186,7 @@ export default async function SrElectionsPage() {
   const resultsContent = <Results rows={resultsRows} />;
 
   return (
-    <Shell batchLabel={student.batch_label} userMenu={userMenu}>
+    <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl">SR Elections — {TERM}</h1>
         <SrElectionsTabs nomination={nominationContent} voting={votingContent} results={resultsContent} />

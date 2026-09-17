@@ -59,13 +59,27 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+// These three don't apply to MBA1 yet — EAP Points is elective-bidding scoring
+// (bidding starts later in the program), SR Elections and Term Planner are both
+// hardcoded to MBA2's current term server-side. Each of those pages independently
+// blocks its own real content for an MBA1 student regardless of this list (a hidden
+// nav link alone wouldn't have stopped someone reaching the page directly by URL —
+// this is only the matching UI-side hide, not the actual access control). Kept as an
+// explicit allowlist of which hrefs to hide, not a lookup into NAV_ITEMS by label, so
+// adding a new nav item later defaults to VISIBLE for MBA1 rather than silently
+// inheriting a hide that was never decided for it.
+const HIDDEN_FOR_MBA1 = new Set(['/eap', '/sr-elections', '/planner']);
+
 const COLLAPSE_KEY = 'acad-sidebar-collapsed';
 
-export default function Sidebar({ batchLabel }: { batchLabel?: string }) {
+export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; cohort?: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false); // mobile drawer
   const [collapsed, setCollapsed] = useState(false); // desktop rail
   const [hydrated, setHydrated] = useState(false);
+
+  const visibleNavItems =
+    cohort === 'MBA1' ? NAV_ITEMS.filter((item) => !HIDDEN_FOR_MBA1.has(item.href)) : NAV_ITEMS;
 
   // Read persisted collapse state once on mount. Gated behind `hydrated` so
   // the server-rendered markup (always "expanded") matches the client's first
@@ -151,7 +165,7 @@ export default function Sidebar({ batchLabel }: { batchLabel?: string }) {
         </div>
 
         <nav className="flex flex-col gap-1">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link
