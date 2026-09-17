@@ -3,6 +3,10 @@
     {
       "path": "/api/sync-timetable",
       "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/sync-timetable?batch=mba1",
+      "schedule": "10 17 * * *"
     }
   ]
 }

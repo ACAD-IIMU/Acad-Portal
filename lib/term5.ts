@@ -17,20 +17,22 @@
 //
 // IMPORTANT — this file alone does NOT make the app multi-cohort-aware. It only
 // renames what was previously `lib/currentTerm.ts` so the naming stops implying a
-// single global term. The actual gaps that block MBA1/Term II from working correctly
-// are still open and unrelated to this rename:
-//   1. `subjects`/`sections`/`sessions`/`important_events` have no `batch_label` column
-//      — still scoped by `term` text alone, so MBA1 and MBA2 rows collide the moment
-//      they ever share a term label (they don't yet, but will eventually).
-//   2. `app/api/sync-timetable/route.ts` is single-batch by design — one hardcoded
-//      FILE_ID, one TERM, no way to sync a second cohort's workbook. MBA1's sheet also
-//      uses a different strikethrough format (cell-level, not the OOXML rich-text runs
-//      MBA2's file needs), so the parser branches too, not just the input file.
-//   3. `app/home/page.tsx` has zero cohort filtering — it queries sessions by term
-//      alone, with no student-cohort join. An MBA1 student logging in today would see
-//      MBA2's schedule, not their own.
-// All three need solving before `lib/term2.ts` can actually serve MBA1 students —
-// this file just stops the naming from getting in the way of that work.
+// single global term. Status of the 3 gaps that block MBA1 from working correctly —
+// UPDATED after actually inspecting MBA1's real sheet and building against it (see
+// lib/term1.ts and lib/parseGridTimetable.ts for the full detail; two things below
+// turned out different from what was originally assumed here):
+//   1. batch_label — DONE. Added to subjects/sections/sessions/important_events and
+//      backfilled.
+//   2. sync-timetable's single-batch design — DONE, batch-parameterized (?batch=
+//      mba1|mba2). CORRECTION to what this comment used to say: the real difference
+//      from MBA2's sheet isn't strikethrough format (MBA1 uses plain whole-cell
+//      styling, which the existing buildStrikethroughMap already handled with zero
+//      changes) — it's that MBA1's sheet is laid out as one column-BLOCK per section
+//      instead of MBA2's one-column-per-slot-with-section-labels-inside-the-cell-
+//      text, hence a genuinely separate parser (lib/parseGridTimetable.ts), not a
+//      branch inside this one.
+//   3. `app/home/page.tsx` has zero cohort filtering — still open, not touched yet.
+// lib/term1.ts is MBA1's equivalent of this file.
 //
 // Note: `app/eap/page.tsx` intentionally does NOT import this. EAP tracks the term a
 // student is *bidding for* (current term + 1, per the EAP N+1 rule) as its own local

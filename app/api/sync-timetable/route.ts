@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
-import { parseTimetableWorkbook, normalizeCode } from "@/lib/parseTimetable";
+import { parseTimetableWorkbook, normalizeCode, ParsedSession, UnmappedEntry } from "@/lib/parseTimetable";
+import { parseGridTimetableWorkbook } from "@/lib/parseGridTimetable";
 import { extractEventsFromUnmapped } from "@/lib/parseEvents";
 import { TERM_5 } from "@/lib/term5";
+import { TERM_1 } from "@/lib/term1";
 
 // Protects this endpoint from being hit by anyone but Vercel Cron / you manually.
 // Vercel Cron sends this header automatically; for manual testing, pass ?secret=... instead.
@@ -17,23 +19,82 @@ function isAuthorized(req: Request): boolean {
   );
 }
 
-// Single-batch by design, for now: this syncs only MBA2's (2025-27) workbook/term.
-// MBA1 (2026-28) has its own timetable sheet with a different strikethrough format
-// (cell-level, not the OOXML rich-text runs this file's parser expects) — syncing it
-// needs this route to become batch-parameterized (route/query param choosing FILE_ID +
-// TERM + parser variant), not just swapping TERM_5 for a future TERM_2. Not done yet.
-const FILE_ID = "1OjH92BHuiKBIqai-YTiR0Hx2DFZ2lkpM"; // MBA 2025-27 Batch Timetable.xlsx
-const TERM = TERM_5;
+// Now batch-parameterized via ?batch=mba1|mba2 (defaults to mba2 -- the existing
+// Vercel Cron entry hits this route with NO query string at all, so the default has
+// to reproduce exactly what this route always did, unchanged, for that cron to keep
+// working without also editing vercel.json's existing entry).
+//
+// mba1's fileId points at a NATIVE Google Sheet (confirmed directly via the
+// check-mba1-drive-access.ts diagnostic — mimeType
+// application/vnd.google-apps.spreadsheet), not an uploaded .xlsx like mba2's file,
+// hence isNativeSheet + the files.export branch below instead of files.get.
+//
+// IMPORTANT, not yet resolved by this file (flagging rather than pretending
+// otherwise): calling this route with ?batch=mba1 will run without error but
+// currently resolve ZERO sessions, because `subjects`/`sections` rows for MBA1/
+// Term I don't exist in the DB yet -- nothing has populated them. This route only
+// ever *queries* those tables (see step 3 below), matching MBA2's own existing
+// contract ("via the tables already populated from the enrollment import" -- a
+// separate, not-yet-built process for MBA1). Safe to deploy and test now regardless:
+// with nothing resolved, every session falls into `unresolvedSubjectCodes` in the
+// response instead of silently going missing, which is exactly the signal needed to
+// confirm subjects/sections are the next real gap, not a crash or bad data.
+interface ParseResult {
+  sessions: ParsedSession[];
+  unmapped: UnmappedEntry[];
+  skippedStrikethrough: UnmappedEntry[];
+}
 
-// Known abbreviations used in the sheet that don't normalize-match the full subject name.
+const BATCH_CONFIGS: Record<
+  string,
+  {
+    fileId: string;
+    term: string;
+    batchLabel: string;
+    isNativeSheet: boolean;
+    parse: (buffer: Buffer, term: string) => Promise<ParseResult>;
+  }
+> = {
+  mba2: {
+    fileId: "1OjH92BHuiKBIqai-YTiR0Hx2DFZ2lkpM", // MBA 2025-27 Batch Timetable.xlsx
+    term: TERM_5,
+    batchLabel: "MBA 2025-27",
+    isNativeSheet: false,
+    parse: parseTimetableWorkbook,
+  },
+  mba1: {
+    fileId: "1U-SwYxSrFhmrfggRaVtp-v3zmnH1cKAATvjzHskArps", // MBA 2026-28 Batch Timetable (native Google Sheet)
+    term: TERM_1,
+    batchLabel: "MBA 2026-28",
+    isNativeSheet: true,
+    parse: parseGridTimetableWorkbook,
+  },
+};
+
+// Known abbreviations used in the sheet(s) that don't normalize-match the full
+// subject name. Kept shared across batches for now -- harmless for whichever batch
+// doesn't trigger a given alias, and MBA1's own set (if any turn out to be needed)
+// isn't known yet since only Term I has been inspected so far.
 const EVENT_CODE_ALIASES: Record<string, string> = {
-  REV: "REVMGMT" // "ReV" alone, used in the end-of-term exam block, for "Rev Mgmt"
+  REV: "REVMGMT" // "ReV" alone, used in MBA2's end-of-term exam block, for "Rev Mgmt"
 };
 
 export async function GET(req: Request) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const url = new URL(req.url);
+  const batchParam = url.searchParams.get("batch") ?? "mba2";
+  const config = BATCH_CONFIGS[batchParam];
+  if (!config) {
+    return NextResponse.json(
+      { error: `Unknown batch "${batchParam}". Valid values: ${Object.keys(BATCH_CONFIGS).join(", ")}` },
+      { status: 400 }
+    );
+  }
+  const TERM = config.term;
+  const BATCH_LABEL = config.batchLabel;
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!, // matches the var name already set in this project
@@ -52,11 +113,25 @@ export async function GET(req: Request) {
 
   let buffer: Buffer;
   try {
-    const fileRes = await drive.files.get(
-      { fileId: FILE_ID, alt: "media" },
-      { responseType: "arraybuffer" }
-    );
-    buffer = Buffer.from(fileRes.data as ArrayBuffer);
+    if (config.isNativeSheet) {
+      // Native Google Sheets can't be downloaded via files.get -- Drive rejects that
+      // with "This file cannot be downloaded directly. Please use Export instead."
+      // Confirmed directly for mba1's file before writing this branch, not assumed.
+      const fileRes = await drive.files.export(
+        {
+          fileId: config.fileId,
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+        { responseType: "arraybuffer" }
+      );
+      buffer = Buffer.from(fileRes.data as ArrayBuffer);
+    } else {
+      const fileRes = await drive.files.get(
+        { fileId: config.fileId, alt: "media" },
+        { responseType: "arraybuffer" }
+      );
+      buffer = Buffer.from(fileRes.data as ArrayBuffer);
+    }
   } catch (err: any) {
     return NextResponse.json(
       { error: "Failed to download timetable from Drive", detail: err.message },
@@ -64,14 +139,21 @@ export async function GET(req: Request) {
     );
   }
 
-  // 2) Parse it.
-  const { sessions, unmapped, skippedStrikethrough } = await parseTimetableWorkbook(buffer, TERM);
+  // 2) Parse it -- MBA2 uses the existing per-slot-column parser; MBA1 uses the
+  //    section-block-column parser (see lib/parseGridTimetable.ts for why they're
+  //    genuinely different grammars, not a config-swap of the same one).
+  const { sessions, unmapped, skippedStrikethrough } = await config.parse(buffer, TERM);
 
-  // 3) Resolve subject_id / section_id via the tables already populated from the enrollment import.
+  // 3) Resolve subject_id / section_id via the tables already populated from the
+  //    enrollment import. Now scoped by batch_label as well as term -- this is the
+  //    exact reason that column was added (see the batch_label_step*.sql migration):
+  //    without it, the moment MBA1 and some future batch ever share a term label,
+  //    this lookup would silently match the wrong batch's subject rows.
   const { data: subjects, error: subjErr } = await supabase
     .from("subjects")
     .select("id, name")
-    .eq("term", TERM);
+    .eq("term", TERM)
+    .eq("batch_label", BATCH_LABEL);
   if (subjErr) {
     return NextResponse.json({ error: "Failed to load subjects", detail: subjErr.message }, { status: 500 });
   }
@@ -80,7 +162,8 @@ export async function GET(req: Request) {
   const { data: sections, error: secErr } = await supabase
     .from("sections")
     .select("id, subject_id, section_label")
-    .eq("term", TERM);
+    .eq("term", TERM)
+    .eq("batch_label", BATCH_LABEL);
   if (secErr) {
     return NextResponse.json({ error: "Failed to load sections", detail: secErr.message }, { status: 500 });
   }
@@ -91,6 +174,7 @@ export async function GET(req: Request) {
   const rowsToInsert: Array<{
     subject_id: string;
     term: string;
+    batch_label: string;
     section_id: string | null;
     session_number: number;
     session_date: string;
@@ -114,16 +198,16 @@ export async function GET(req: Request) {
     rowsToInsert.push({
       subject_id: subjectId,
       term: TERM,
+      batch_label: BATCH_LABEL,
       section_id: sectionId,
       session_number: s.sessionNumber,
       session_date: s.sessionDate,
       start_time: s.startTime,
       end_time: s.endTime,
       room: s.room,
-      // Null for every normal numbered class; set only for named one-offs like
-      // "COIL Interaction" (see SPECIAL_SESSION_NAMES in lib/parseTimetable.ts).
-      // Requires the session_label column + the updated sync_sessions_for_term
-      // function — run the SQL migration BEFORE deploying this.
+      // Null for every normal numbered class; set for MBA2's named one-offs (e.g.
+      // "COIL Interaction") and for MBA1's unnumbered/Cohort entries (e.g. "MOC",
+      // "Excel Cohort 2, Session 6 (LAB)") -- see lib/parseGridTimetable.ts.
       session_label: s.sessionLabel,
     });
   }
@@ -134,6 +218,13 @@ export async function GET(req: Request) {
   //    if genuinely new, and removes anything no longer present in this sync's data. All in
   //    one Postgres function call, so a failure partway through can't leave sessions half-
   //    deleted the way the old separate delete-then-insert calls could.
+  //
+  //    NOT YET CONFIRMED (flagging rather than assuming): whether sync_sessions_for_term
+  //    (a Postgres function, not tracked in this repo -- same as other ad-hoc DB
+  //    objects) itself scopes its delete/match logic by batch_label as well as term,
+  //    now that the column exists. It isn't a problem THIS year (mba1's "Term I" and
+  //    mba2's "Term V" don't collide), but is worth checking -- and updating if
+  //    needed -- before relying on this for a second full academic cycle.
   const { data: syncResult, error: syncErr } = await supabase.rpc("sync_sessions_for_term", {
     target_term: TERM,
     rows: rowsToInsert,
@@ -150,19 +241,19 @@ export async function GET(req: Request) {
 
   const eventRowsToInsert: Array<{
     term: string;
+    batch_label: string;
     event_date: string;
     type: "quiz" | "endterm" | "other";
     label: string;
     subject_id: string | null;
   }> = events.map((e) => ({
     term: TERM,
+    batch_label: BATCH_LABEL,
     event_date: e.eventDate,
     type: e.type,
     label: e.label,
     // Reuses the same subject map already built for sessions above — no extra query needed.
     // Null is fine here (e.g. "Registration" has no subject); the column allows it.
-    // "ReV" alone (no "Mgmt") shows up in the end-of-term exam block for Rev Mgmt — same
-    // category as the TS:ADR/TS-ADR alias handled during the enrollment import.
     subject_id: e.subjectCodeRaw
       ? subjectByNormCode.get(normalizeCode(e.subjectCodeRaw)) ??
         subjectByNormCode.get(EVENT_CODE_ALIASES[normalizeCode(e.subjectCodeRaw)] ?? "") ??
@@ -174,9 +265,14 @@ export async function GET(req: Request) {
   // (wrong sheet, corrupted source data, etc.) should never wipe existing real events —
   // leaving one cycle's data stale is far safer than deleting real quiz/exam reminders
   // with nothing to replace them. Only touch important_events if there's something to
-  // actually replace it with.
+  // actually replace it with. Scoped by batch_label now too, so a stale mba1 sync can
+  // never wipe mba2's events (or vice versa) even if they ever shared a term label.
   if (eventRowsToInsert.length > 0) {
-    const { error: deleteEventsErr } = await supabase.from("important_events").delete().eq("term", TERM);
+    const { error: deleteEventsErr } = await supabase
+      .from("important_events")
+      .delete()
+      .eq("term", TERM)
+      .eq("batch_label", BATCH_LABEL);
     if (deleteEventsErr) {
       return NextResponse.json(
         { error: "Failed to clear old important_events", detail: deleteEventsErr.message },
@@ -195,6 +291,8 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ok: true,
+    batch: batchParam,
+    term: TERM,
     sessionsProcessed: rowsToInsert.length,
     sessionsUpsertedOrUnchanged: upsertedCount,
     sessionsRemoved: deletedCount,
