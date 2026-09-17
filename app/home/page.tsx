@@ -5,6 +5,7 @@ import Reminders from './Reminders';
 import QuickLinks from './QuickLinks';
 import MonthView from './MonthView';
 import { TERM_5 } from '@/lib/term5';
+import { TERM_1 } from '@/lib/term1';
 
 // This page is per-student personalized (enrollments, own sessions, own events) — it must
 // never be statically cached or served stale to a different logged-in user.
@@ -20,6 +21,17 @@ export default async function HomePage() {
   const supabase = createClient();
 
   const { data: student } = await supabase.from('students').select('*').single();
+
+  // Which cohort is this student in RIGHT NOW — resolves which of the two current-term
+  // constants applies. `cohort` is the rotating 'MBA1'/'MBA2' label (flips once a year);
+  // `batch_label` is the stable 'MBA 2026-28' one, already a column on `students` (used
+  // for display elsewhere on this same page already, e.g. the Sidebar below) — reused
+  // directly here rather than hardcoded, so this keeps working correctly however many
+  // batches exist, not just today's two. Defaults to TERM_5/MBA2 behavior for anyone not
+  // explicitly MBA1, matching this app's only other cohort ever until now.
+  const isMba1 = student?.cohort === 'MBA1';
+  const studentTerm = isMba1 ? TERM_1 : TERM_5;
+  const studentBatchLabel = student?.batch_label;
 
   const { count: srCount } = await supabase
     .from('sr_assignments')
@@ -43,7 +55,8 @@ export default async function HomePage() {
   const { data: earliestSession } = await supabase
     .from('sessions')
     .select('session_date')
-    .eq('term', TERM_5)
+    .eq('term', studentTerm)
+    .eq('batch_label', studentBatchLabel)
     .order('session_date', { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -51,7 +64,8 @@ export default async function HomePage() {
   const { data: latestSession } = await supabase
     .from('sessions')
     .select('session_date')
-    .eq('term', TERM_5)
+    .eq('term', studentTerm)
+    .eq('batch_label', studentBatchLabel)
     .order('session_date', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -76,14 +90,16 @@ export default async function HomePage() {
   const { data: upcomingEvents } = await supabase
     .from('important_events')
     .select('*, subjects(name)')
-    .eq('term', TERM_5)
+    .eq('term', studentTerm)
+    .eq('batch_label', studentBatchLabel)
     .gte('event_date', today)
     .order('event_date');
 
   const { data: allTermEvents } = await supabase
     .from('important_events')
     .select('*, subjects(name)')
-    .eq('term', TERM_5)
+    .eq('term', studentTerm)
+    .eq('batch_label', studentBatchLabel)
     .order('event_date');
 
   // New: personal reminders (this student's own) and SR class announcements (anything
@@ -106,13 +122,16 @@ export default async function HomePage() {
     .gte('target_at', now.toISOString())
     .order('target_at');
 
-  // This student's own enrolled subjects for TERM_5 — populates the optional subject
-  // dropdown when adding a personal reminder ("Corp Val assignment due" etc).
+  // This student's own enrolled subjects for their own current term — populates the
+  // optional subject dropdown when adding a personal reminder ("Corp Val assignment due"
+  // etc). Scoped by student_id already, which inherently pins it to this student's own
+  // batch regardless of term label — batch_label isn't added here since it isn't
+  // confirmed to exist on `enrollments` and isn't needed for correctness given that.
   const { data: enrolledSubjects } = await supabase
     .from('enrollments')
     .select('subject_id, subjects(name)')
     .eq('student_id', student?.id ?? '')
-    .eq('term', TERM_5);
+    .eq('term', studentTerm);
   const studentSubjects = (enrolledSubjects ?? [])
     .map((e) => ({ id: e.subject_id, name: (e.subjects as any)?.name as string | undefined }))
     .filter((s): s is { id: string; name: string } => !!s.name)
@@ -165,7 +184,7 @@ export default async function HomePage() {
 
       <MonthView
         sessions={termSessions ?? []}
-        termLabel={TERM_5}
+        termLabel={studentTerm}
         termStart={TERM_START}
         termEnd={TERM_END}
         importantEvents={allTermEvents ?? []}

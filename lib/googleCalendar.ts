@@ -1,6 +1,7 @@
 import { google, calendar_v3 } from 'googleapis';
 import { createAdminClient } from '@/lib/supabase/server';
 import { TERM_5 } from '@/lib/term5';
+import { TERM_1 } from '@/lib/term1';
 
 type SessionToPush = {
   id: string;
@@ -203,11 +204,22 @@ export async function pushScheduleToCalendar(studentId: string): Promise<PushRes
   const startedAt = Date.now();
   const overBudget = () => Date.now() - startedAt > FUNCTION_TIME_BUDGET_MS;
 
-  // Hardcoded to TERM_5 (MBA2) below — an MBA1 student calling this today would just
-  // find zero enrollments for Term V and get nothing pushed (harmless, not broken), but
-  // this function doesn't yet know how to push MBA1's own current term. Needs the same
-  // batch-parameterization as sync-timetable/route.ts before MBA1 students can use it.
   const admin = createAdminClient();
+
+  // Which cohort this student is in decides which current-term constant applies — same
+  // resolution as app/home/page.tsx, done independently here since this function bypasses
+  // RLS via the admin client below and can't rely on the caller (app/api/calendar/push/
+  // route.ts) to have already looked this up; it only ever passes a bare studentId.
+  // batch_label reused directly from the student's own row (already stored there) rather
+  // than hardcoded, matching the same reasoning as the Home page fix.
+  const { data: studentRow } = await admin
+    .from('students')
+    .select('cohort, batch_label')
+    .eq('id', studentId)
+    .maybeSingle();
+  const isMba1 = studentRow?.cohort === 'MBA1';
+  const term = isMba1 ? TERM_1 : TERM_5;
+  const batchLabel = studentRow?.batch_label;
 
   const { data: tokenRow } = await admin
     .from('google_tokens')
@@ -231,14 +243,21 @@ export async function pushScheduleToCalendar(studentId: string): Promise<PushRes
   // every other query in the app, the enrollment scoping normally handled automatically
   // by the "students see sessions they're enrolled in" RLS policy does NOT apply here.
   // Fix: replicate the RLS policy's join explicitly — fetch this student's own enrollments
-  // for TERM_5, then keep only sessions matching (subject_id, section_id) from that
-  // set, same null-safe section match the policy uses (a subject with no sectioning has
-  // section_id = null on both sides).
+  // for their own current term, then keep only sessions matching (subject_id, section_id)
+  // from that set, same null-safe section match the policy uses (a subject with no
+  // sectioning has section_id = null on both sides).
+  //
+  // IMPORTANT, not fixed by this change: `enrollments` rows for MBA1 don't exist in the
+  // database yet (same gap that blocked subjects/sections until the mba1_step0-2 scripts
+  // populated those) — so an MBA1 student calling this right now will hit the empty-
+  // enrollments branch just below and get a clean "nothing to push" result, not an error,
+  // but also not their real schedule. That's the next real prerequisite, not a bug in this
+  // function.
   const { data: enrollments } = await admin
     .from('enrollments')
     .select('subject_id, section_id')
     .eq('student_id', studentId)
-    .eq('term', TERM_5);
+    .eq('term', term);
 
   if (!enrollments || enrollments.length === 0) {
     return { sessionsPushed: 0, sessionsTotal: 0, eventsPushed: 0, eventsTotal: 0, timedOut: false };
@@ -251,7 +270,8 @@ export async function pushScheduleToCalendar(studentId: string): Promise<PushRes
   const { data: allTermSessions } = await admin
     .from('sessions')
     .select('id, session_date, start_time, end_time, room, subject_id, section_id, subjects(name)')
-    .eq('term', TERM_5);
+    .eq('term', term)
+    .eq('batch_label', batchLabel);
 
   const sessions = (allTermSessions ?? []).filter((s) =>
     enrolledKeys.has(`${s.subject_id}::${s.section_id ?? 'null'}`)
@@ -292,7 +312,8 @@ export async function pushScheduleToCalendar(studentId: string): Promise<PushRes
   const { data: allTermEvents } = await admin
     .from('important_events')
     .select('id, event_date, type, label, subject_id')
-    .eq('term', TERM_5);
+    .eq('term', term)
+    .eq('batch_label', batchLabel);
 
   const eventsToPush = (allTermEvents ?? []).filter(
     (e) => e.subject_id === null || enrolledSubjectIds.has(e.subject_id)
