@@ -283,13 +283,31 @@ export async function GET(req: Request) {
     }))
   );
 
+  // De-duplicate: important_events has no section_id column (unlike `sessions`), so a
+  // Quiz/Tutorial that genuinely runs separately per section (confirmed directly --
+  // e.g. MBA1's "SM Tutorial 2" appears 5 times in one day's row, once per section,
+  // each at a slightly different time) would otherwise become 5 near-identical rows
+  // that every student sees all of, with no column to filter down to just their own
+  // section. Collapsing to one reminder per (date, label, type, subject) is a
+  // deliberate simplification given that schema gap, not an accident: a student is
+  // better served by one "SM Tutorial 2 today" reminder than five, and the specific
+  // per-section time difference isn't something a section-less table can correctly
+  // convey per-student anyway.
+  const seenEventKeys = new Set<string>();
+  const dedupedEventRows = eventRowsToInsert.filter((e) => {
+    const key = `${e.event_date}::${e.label}::${e.type}::${e.subject_id ?? ""}`;
+    if (seenEventKeys.has(key)) return false;
+    seenEventKeys.add(key);
+    return true;
+  });
+
   // Guard against exactly what just happened: a parse that comes back with zero events
   // (wrong sheet, corrupted source data, etc.) should never wipe existing real events —
   // leaving one cycle's data stale is far safer than deleting real quiz/exam reminders
   // with nothing to replace them. Only touch important_events if there's something to
   // actually replace it with. Scoped by batch_label now too, so a stale mba1 sync can
   // never wipe mba2's events (or vice versa) even if they ever shared a term label.
-  if (eventRowsToInsert.length > 0) {
+  if (dedupedEventRows.length > 0) {
     const { error: deleteEventsErr } = await supabase
       .from("important_events")
       .delete()
@@ -302,7 +320,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const { error: insertEventsErr } = await supabase.from("important_events").insert(eventRowsToInsert);
+    const { error: insertEventsErr } = await supabase.from("important_events").insert(dedupedEventRows);
     if (insertEventsErr) {
       return NextResponse.json(
         { error: "Failed to insert important_events", detail: insertEventsErr.message },
@@ -320,7 +338,7 @@ export async function GET(req: Request) {
     sessionsRemoved: deletedCount,
     unresolvedSubjectCodes: [...new Set(unresolvedSubjects)],
     skippedStrikethrough: skippedStrikethrough.length,
-    eventsInserted: eventRowsToInsert.length,
+    eventsInserted: dedupedEventRows.length,
     unmapped: stillUnmapped.length,
     unmappedSample: stillUnmapped.slice(0, 30), // full list would be large; sample + counts for a quick read
     syncedAt: new Date().toISOString(),
