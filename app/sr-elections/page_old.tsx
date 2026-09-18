@@ -1,33 +1,13 @@
 // app/sr-elections/page.tsx
 //
-// SR Elections — nomination + voting + results, cohort-aware. Same shell
-// pattern as EAP/Home: Sidebar wraps every return path.
-//
-// The term is resolved per-student from `cohort` (Term I for MBA1, Term V for
-// MBA2), matching the same pattern app/home/page.tsx and lib/googleCalendar.ts
-// already use. `batch_label` isn't the right key here — that's stable for the
-// batch's whole life, while "current term" rotates each year.
-//
-// Cross-cohort isolation: sr_nominations and sr_assignments are scoped by
-// `term` alone (no batch_label column). That's safe today because MBA1's
-// 'Term I' and MBA2's 'Term V' can never string-match — the same reasoning
-// lib/term5.ts and the sync-timetable route already rely on. If two batches
-// ever share a term label at the same time (e.g. both on 'Term III' one day),
-// sr_nominations/sr_assignments will need a batch_label column added, same as
-// subjects/sections/sessions already got in the batch_label_step*.sql
-// migration. Not urgent — flagging so it's on the record.
-//
-// Voting-table split: voteTableForTerm() returns a per-term PHYSICAL table
-// (sr_votes_term_v, sr_votes_term_i, ...). Someone has to create
-// sr_votes_term_i in Supabase before MBA1's voting phase opens, mirroring
-// sr_votes_term_v — this is the existing per-term operational step, just
-// applied to a second cohort's term for the first time. Until then the page
-// still loads fine for MBA1 (nomination + empty voting/results state); only
-// an actual vote submit would 500.
+// SR Elections — nomination phase only, for now. Voting comes later as a
+// separate build (see the plan). Same shell pattern as EAP/Home: Sidebar
+// wraps every return path, term hardcoded here same as everywhere else
+// until there's a single source of truth for current_term.
+
+const TERM = 'Term V';
 
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { TERM_1 } from '@/lib/term1';
-import { TERM_5 } from '@/lib/term5';
 import Sidebar from '@/components/Sidebar';
 import UserMenu from '@/components/UserMenu';
 import NominationForm from './NominationForm';
@@ -80,18 +60,28 @@ export default async function SrElectionsPage() {
     <UserMenu name={student.full_name} regNo={student.reg_no} batchLabel={student.batch_label} />
   );
 
-  // Which cohort this student is in decides which current-term constant applies.
-  // Every DB read below scopes by this TERM, which is the actual isolation
-  // between cohorts: an MBA1 student's sr_nominations / enrollments /
-  // sr_assignments queries only ever return Term I rows, and an MBA2 student's
-  // only ever return Term V rows, even though those tables have no batch_label
-  // column of their own. This is the same reason the earlier hard block for
-  // MBA1 could safely be removed — the "MBA1 student saw MBA2's SR roster"
-  // exposure came from the previous TERM constant being hardcoded to 'Term V'
-  // for everyone, not from anything the admin-client srAssignments query does
-  // wrong on its own; now that TERM tracks the viewer's cohort, the same query
-  // returns exactly and only that cohort's roster.
-  const TERM = student.cohort === 'MBA1' ? TERM_1 : TERM_5;
+  // SR Elections is hardcoded to TERM = 'Term V' (MBA2) throughout this page, including
+  // the admin-client srAssignments query below that returns OTHER STUDENTS' names, roll
+  // numbers, emails, and phone numbers — that query is deliberately unscoped by viewer
+  // ("public-within-the-portal information", per its own comment), which stops being a
+  // safe assumption the moment a second cohort exists who shouldn't see MBA2's SR
+  // roster. Blocked here, before that query (or the nomination/enrollment ones) ever
+  // runs — this is the actual fix for a real MBA1 student having seen exactly that data
+  // (confirmed directly, not theoretical). Hiding the nav link alone (see
+  // components/Sidebar.tsx's HIDDEN_FOR_MBA1) would not have stopped this — that only
+  // covers arriving via the sidebar, not a bookmark, browser history, or a typed URL.
+  if (student.cohort === 'MBA1') {
+    return (
+      <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
+        <div className="card p-6">
+          <p className="text-sm text-inkSoft">
+            SR Elections isn&apos;t open for your batch yet. Check back once ACAD announces it for
+            MBA 2026-28.
+          </p>
+        </div>
+      </Shell>
+    );
+  }
 
   const { data: existingNominations } = await supabase
     .from('sr_nominations')

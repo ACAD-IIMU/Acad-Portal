@@ -59,20 +59,16 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-// These two don't apply to MBA1 yet — EAP Points is elective-bidding scoring
-// (bidding starts later in the program), and Term Planner's bundled dataset is
-// MBA2's electives with no MBA1 equivalent generated yet. Each of those pages
-// independently blocks its own real content for an MBA1 student regardless of
-// this list (a hidden nav link alone wouldn't have stopped someone reaching the
-// page directly by URL — this is only the matching UI-side hide, not the actual
-// access control). SR Elections used to be in this set too, back when the page
-// was hardcoded to Term V; now that its TERM tracks the viewer's cohort
-// (app/sr-elections/page.tsx), MBA1 gets its own real SR Elections view and
-// this hide is no longer wanted. Kept as an explicit allowlist of which hrefs
-// to hide, not a lookup into NAV_ITEMS by label, so adding a new nav item later
-// defaults to VISIBLE for MBA1 rather than silently inheriting a hide that was
-// never decided for it.
-const HIDDEN_FOR_MBA1 = new Set(['/eap', '/planner']);
+// These three don't apply to MBA1 yet — EAP Points is elective-bidding scoring
+// (bidding starts later in the program), SR Elections and Term Planner are both
+// hardcoded to MBA2's current term server-side. Each of those pages independently
+// blocks its own real content for an MBA1 student regardless of this list (a hidden
+// nav link alone wouldn't have stopped someone reaching the page directly by URL —
+// this is only the matching UI-side hide, not the actual access control). Kept as an
+// explicit allowlist of which hrefs to hide, not a lookup into NAV_ITEMS by label, so
+// adding a new nav item later defaults to VISIBLE for MBA1 rather than silently
+// inheriting a hide that was never decided for it.
+const HIDDEN_FOR_MBA1 = new Set(['/eap', '/sr-elections', '/planner']);
 
 const COLLAPSE_KEY = 'acad-sidebar-collapsed';
 
