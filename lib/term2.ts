@@ -1,4 +1,3 @@
-cat > lib/term2.ts << 'EOF'
 // This is MBA1's (batch 2026-28) NEXT term — Term II, which MBA1 moves into once
 // Term I ends (26 September 2026, per the source timetable's own title: "MBA
 // 2026-28, Term-I timetable, 22nd June - 26th September, 2026"). Sibling to
@@ -36,4 +35,6 @@ cat > lib/term2.ts << 'EOF'
 // one term forward. Also: voteTableForTerm('Term II') resolves to the physical
 // table `sr_votes_term_ii` — that table does not exist in Supabase yet either
 // and needs to be created (mirroring sr_votes_term_v) before MBA1's voting
-// phase opens, same
+// phase opens, same as Term I's own gaps had to be closed one by one before
+// its data went live.
+export const TERM_2 = 'Term II';
