@@ -102,9 +102,44 @@ export default async function SrElectionsPage() {
   // the same query returns exactly and only that cohort's roster.
   const TERM = student.cohort === 'MBA1' ? TERM_2 : TERM_5;
 
+  // Fetched unconditionally now (used to be only inside the "no existing
+  // nomination" branch below) — also doubles as the lookup table for
+  // resolving an already-submitted nomination's subject/section names, see
+  // the comment on existingNominations just below for why.
+  const { data: enrollments } = await supabase
+    .from('enrollments')
+    .select('subject_id, section_id, subjects(name), sections(section_label)')
+    .eq('student_id', student.id)
+    .eq('term', TERM);
+
+  const options = (enrollments ?? []).map((e: any) => ({
+    subjectId: e.subject_id as string,
+    subjectName: e.subjects?.name as string,
+    sectionId: e.section_id as string | null,
+    sectionLabel: e.sections?.section_label as string | null
+  }));
+
+  // BUGFIX: this used to embed subjects(name)/sections(section_label) directly
+  // into this select, the same way `enrollments` above does. Real symptom that
+  // traced back to this: a student who'd already submitted was shown the
+  // interactive NominationForm again on a fresh visit, with no indication
+  // anything was wrong, and only found out on a second submit attempt (which
+  // the API correctly rejects with "already submitted" — see
+  // app/api/sr-elections/nominate/route.ts's own duplicate check, the exact
+  // same table+filters with NO embed, which reliably finds the row). Likely
+  // cause: sr_nominations isn't in supabase/schema.sql — it was added live in
+  // Supabase — and is most likely missing the foreign-key constraints on
+  // subject_id/section_id that PostgREST's embed syntax needs to resolve the
+  // join; without them the embedded query can silently return nothing. This
+  // file never checks `error` on any of its queries (matching its existing
+  // style throughout), so that failure was invisible rather than surfaced.
+  // Fix: read only sr_nominations' own plain columns (proven to work, same
+  // shape as the API's working check) and resolve subject/section names from
+  // `options` above instead of a second embed — sidesteps the problem
+  // regardless of its exact cause, no production DB change required.
   const { data: existingNominations } = await supabase
     .from('sr_nominations')
-    .select('subject_id, section_id, priority, submitted_at, subjects(name), sections(section_label)')
+    .select('subject_id, section_id, priority, submitted_at')
     .eq('student_id', student.id)
     .eq('term', TERM)
     .order('priority', { ascending: true });
@@ -122,15 +157,20 @@ export default async function SrElectionsPage() {
             You&apos;re nominated for Subject Representative in:
           </p>
           <ul className="flex flex-col gap-2">
-            {existingNominations.map((n: any, i: number) => (
-              <li key={i} className="flex items-center gap-3 text-sm">
-                <span className="w-6 h-6 rounded-full bg-brand-900 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-                  {n.priority}
-                </span>
-                <b>{n.subjects?.name}</b>
-                {n.sections?.section_label ? ` · Sec ${n.sections.section_label}` : ''}
-              </li>
-            ))}
+            {existingNominations.map((n, i) => {
+              const opt = options.find(
+                (o) => o.subjectId === n.subject_id && o.sectionId === n.section_id
+              );
+              return (
+                <li key={i} className="flex items-center gap-3 text-sm">
+                  <span className="w-6 h-6 rounded-full bg-brand-900 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                    {n.priority}
+                  </span>
+                  <b>{opt?.subjectName ?? 'Subject'}</b>
+                  {opt?.sectionLabel ? ` · Sec ${opt.sectionLabel}` : ''}
+                </li>
+              );
+            })}
           </ul>
           <p className="text-xs text-inkFaint mt-4">
             Submitted{' '}
@@ -145,19 +185,6 @@ export default async function SrElectionsPage() {
       </div>
     );
   } else {
-    const { data: enrollments } = await supabase
-      .from('enrollments')
-      .select('subject_id, section_id, subjects(name), sections(section_label)')
-      .eq('student_id', student.id)
-      .eq('term', TERM);
-
-    const options = (enrollments ?? []).map((e: any) => ({
-      subjectId: e.subject_id as string,
-      subjectName: e.subjects?.name as string,
-      sectionId: e.section_id as string | null,
-      sectionLabel: e.sections?.section_label as string | null
-    }));
-
     nominationContent = (
       <div className="flex flex-col gap-3">
         <p className="text-inkFaint text-sm">
@@ -208,7 +235,19 @@ export default async function SrElectionsPage() {
     <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl">SR Elections — {TERM}</h1>
-        <SrElectionsTabs nomination={nominationContent} voting={votingContent} results={resultsContent} />
+        <SrElectionsTabs
+          nomination={nominationContent}
+          voting={votingContent}
+          results={resultsContent}
+          // Voting/Results aren't functional yet for MBA1/Term II — no
+          // sr_votes_term_ii table exists yet (voteTableForTerm('Term II')
+          // would 500 on an actual vote submit — see lib/term2.ts's own
+          // comment) and no sr_assignments rows exist for Term II either, so
+          // Results would only ever show empty. Hiding both tabs for MBA1
+          // until that's real, rather than showing tabs that lead nowhere.
+          // MBA2/Term V keeps all three — unaffected, already live.
+          showVotingAndResults={student.cohort !== 'MBA1'}
+        />
       </div>
     </Shell>
   );
