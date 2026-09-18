@@ -3,21 +3,14 @@
 // SR Elections — nomination + voting + results, cohort-aware. Same shell
 // pattern as EAP/Home: Sidebar wraps every return path.
 //
-// The term is resolved per-student from `cohort` — but NOT symmetrically.
-// MBA2 uses TERM_5, its live current term (lib/term5.ts). MBA1 uses TERM_2,
-// its NEXT term (lib/term2.ts) — not TERM_1, its current one. That's
-// deliberate: elections have to run before the term they're for starts, so
-// there's a rep in place from day one. Term I is 8 days from ending as of
-// this comment (26 Sep 2026) — electing a Term I rep now would barely serve
-// anyone. Term II is the term this election actually needs to staff. See
-// lib/term2.ts for the full reasoning, including the precedent this follows
-// (app/eap/page.tsx's existing "current term + 1" pattern for elective bids).
-// `batch_label` isn't the right key here — that's stable for the batch's
-// whole life, while "current/next term" rotates each year.
+// The term is resolved per-student from `cohort` (Term I for MBA1, Term V for
+// MBA2), matching the same pattern app/home/page.tsx and lib/googleCalendar.ts
+// already use. `batch_label` isn't the right key here — that's stable for the
+// batch's whole life, while "current term" rotates each year.
 //
 // Cross-cohort isolation: sr_nominations and sr_assignments are scoped by
 // `term` alone (no batch_label column). That's safe today because MBA1's
-// 'Term II' and MBA2's 'Term V' can never string-match — the same reasoning
+// 'Term I' and MBA2's 'Term V' can never string-match — the same reasoning
 // lib/term5.ts and the sync-timetable route already rely on. If two batches
 // ever share a term label at the same time (e.g. both on 'Term III' one day),
 // sr_nominations/sr_assignments will need a batch_label column added, same as
@@ -25,15 +18,15 @@
 // migration. Not urgent — flagging so it's on the record.
 //
 // Voting-table split: voteTableForTerm() returns a per-term PHYSICAL table
-// (sr_votes_term_v, sr_votes_term_ii, ...). Someone has to create
-// sr_votes_term_ii in Supabase before MBA1's voting phase opens, mirroring
+// (sr_votes_term_v, sr_votes_term_i, ...). Someone has to create
+// sr_votes_term_i in Supabase before MBA1's voting phase opens, mirroring
 // sr_votes_term_v — this is the existing per-term operational step, just
-// applied to a second cohort's (upcoming) term for the first time. Until
-// then the page still loads fine for MBA1 (nomination + empty voting/results
-// state); only an actual vote submit would 500.
+// applied to a second cohort's term for the first time. Until then the page
+// still loads fine for MBA1 (nomination + empty voting/results state); only
+// an actual vote submit would 500.
 
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { TERM_2 } from '@/lib/term2';
+import { TERM_1 } from '@/lib/term1';
 import { TERM_5 } from '@/lib/term5';
 import Sidebar from '@/components/Sidebar';
 import UserMenu from '@/components/UserMenu';
@@ -87,20 +80,18 @@ export default async function SrElectionsPage() {
     <UserMenu name={student.full_name} regNo={student.reg_no} batchLabel={student.batch_label} />
   );
 
-  // Which cohort this student is in decides which term constant applies —
-  // MBA1 gets TERM_2 (the term being elected FOR), MBA2 gets TERM_5 (its
-  // live current term). Every DB read below scopes by this TERM, which is
-  // the actual isolation between cohorts: an MBA1 student's sr_nominations /
-  // enrollments / sr_assignments queries only ever return Term II rows, and
-  // an MBA2 student's only ever return Term V rows, even though those tables
-  // have no batch_label column of their own. This is the same reason the
-  // earlier hard block for MBA1 could safely be removed — the "MBA1 student
-  // saw MBA2's SR roster" exposure came from the previous TERM constant being
-  // hardcoded to 'Term V' for everyone, not from anything the admin-client
-  // srAssignments query does wrong on its own; now that TERM tracks the
-  // viewer's cohort (and, for MBA1, the term ahead rather than the term now),
-  // the same query returns exactly and only that cohort's roster.
-  const TERM = student.cohort === 'MBA1' ? TERM_2 : TERM_5;
+  // Which cohort this student is in decides which current-term constant applies.
+  // Every DB read below scopes by this TERM, which is the actual isolation
+  // between cohorts: an MBA1 student's sr_nominations / enrollments /
+  // sr_assignments queries only ever return Term I rows, and an MBA2 student's
+  // only ever return Term V rows, even though those tables have no batch_label
+  // column of their own. This is the same reason the earlier hard block for
+  // MBA1 could safely be removed — the "MBA1 student saw MBA2's SR roster"
+  // exposure came from the previous TERM constant being hardcoded to 'Term V'
+  // for everyone, not from anything the admin-client srAssignments query does
+  // wrong on its own; now that TERM tracks the viewer's cohort, the same query
+  // returns exactly and only that cohort's roster.
+  const TERM = student.cohort === 'MBA1' ? TERM_1 : TERM_5;
 
   const { data: existingNominations } = await supabase
     .from('sr_nominations')
