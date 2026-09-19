@@ -46,6 +46,16 @@ import type { ReactNode } from 'react';
 // Per-student data (own enrollments, own nomination state) — never cache/serve stale.
 export const dynamic = 'force-dynamic';
 
+// MBA1's Term II election date isn't fixed yet, so this is a plain manual
+// switch rather than a date comparison — flip to true and push once ACAD
+// actually announces the start. Mirrored (not shared — no config file exists
+// for this yet) in the matching guard at the top of
+// app/api/sr-elections/nominate/route.ts, so a direct POST can't bypass this
+// the way a UI-only hide never actually stops a determined request — same
+// lesson as HIDDEN_FOR_MBA1 in components/Sidebar.tsx. Only gates MBA1:
+// MBA2's Term V nomination window already ran and is untouched by this.
+const MBA1_NOMINATIONS_OPEN = false;
+
 function Shell({
   batchLabel,
   cohort,
@@ -102,104 +112,87 @@ export default async function SrElectionsPage() {
   // the same query returns exactly and only that cohort's roster.
   const TERM = student.cohort === 'MBA1' ? TERM_2 : TERM_5;
 
-  // Fetched unconditionally now (used to be only inside the "no existing
-  // nomination" branch below) — also doubles as the lookup table for
-  // resolving an already-submitted nomination's subject/section names, see
-  // the comment on existingNominations just below for why.
-  const { data: enrollments } = await supabase
-    .from('enrollments')
-    .select('subject_id, section_id, subjects(name), sections(section_label)')
-    .eq('student_id', student.id)
-    .eq('term', TERM);
+  const nominationsOpenForViewer = student.cohort !== 'MBA1' || MBA1_NOMINATIONS_OPEN;
 
-  const options = (enrollments ?? []).map((e: any) => ({
-    subjectId: e.subject_id as string,
-    subjectName: e.subjects?.name as string,
-    sectionId: e.section_id as string | null,
-    sectionLabel: e.sections?.section_label as string | null
-  }));
-
-  // BUGFIX: this used to embed subjects(name)/sections(section_label) directly
-  // into this select, the same way `enrollments` above does. Real symptom that
-  // traced back to this: a student who'd already submitted was shown the
-  // interactive NominationForm again on a fresh visit, with no indication
-  // anything was wrong, and only found out on a second submit attempt (which
-  // the API correctly rejects with "already submitted" — see
-  // app/api/sr-elections/nominate/route.ts's own duplicate check, the exact
-  // same table+filters with NO embed, which reliably finds the row). Likely
-  // cause: sr_nominations isn't in supabase/schema.sql — it was added live in
-  // Supabase — and is most likely missing the foreign-key constraints on
-  // subject_id/section_id that PostgREST's embed syntax needs to resolve the
-  // join; without them the embedded query can silently return nothing. This
-  // file never checks `error` on any of its queries (matching its existing
-  // style throughout), so that failure was invisible rather than surfaced.
-  // Fix: read only sr_nominations' own plain columns (proven to work, same
-  // shape as the API's working check) and resolve subject/section names from
-  // `options` above instead of a second embed — sidesteps the problem
-  // regardless of its exact cause, no production DB change required.
-  const { data: existingNominations } = await supabase
-    .from('sr_nominations')
-    .select('subject_id, section_id, priority, submitted_at')
-    .eq('student_id', student.id)
-    .eq('term', TERM)
-    .order('priority', { ascending: true });
-
-  // Already submitted — locked-in, read-only confirmation. No edit path exists
-  // at all, by design, so there's nothing else to render here.
   let nominationContent: ReactNode;
 
-  if (existingNominations && existingNominations.length > 0) {
+  if (!nominationsOpenForViewer) {
     nominationContent = (
-      <div className="flex flex-col gap-3">
-        <p className="text-inkFaint text-sm">Nomination submitted. This is final.</p>
-        <div className="card p-5">
-          <p className="text-sm text-inkSoft mb-3">
-            You&apos;re nominated for Subject Representative in:
-          </p>
-          <ul className="flex flex-col gap-2">
-            {existingNominations.map((n, i) => {
-              const opt = options.find(
-                (o) => o.subjectId === n.subject_id && o.sectionId === n.section_id
-              );
-              return (
+      <p className="text-sm text-inkFaint italic card p-5">
+        SR Elections haven&apos;t started yet — check back soon.
+      </p>
+    );
+  } else {
+    const { data: existingNominations } = await supabase
+      .from('sr_nominations')
+      .select('subject_id, section_id, priority, submitted_at, subjects(name), sections(section_label)')
+      .eq('student_id', student.id)
+      .eq('term', TERM)
+      .order('priority', { ascending: true });
+
+    // Already submitted — locked-in, read-only confirmation. No edit path exists
+    // at all, by design, so there's nothing else to render here.
+    if (existingNominations && existingNominations.length > 0) {
+      nominationContent = (
+        <div className="flex flex-col gap-3">
+          <p className="text-inkFaint text-sm">Nomination submitted. This is final.</p>
+          <div className="card p-5">
+            <p className="text-sm text-inkSoft mb-3">
+              You&apos;re nominated for Subject Representative in:
+            </p>
+            <ul className="flex flex-col gap-2">
+              {existingNominations.map((n: any, i: number) => (
                 <li key={i} className="flex items-center gap-3 text-sm">
                   <span className="w-6 h-6 rounded-full bg-brand-900 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
                     {n.priority}
                   </span>
-                  <b>{opt?.subjectName ?? 'Subject'}</b>
-                  {opt?.sectionLabel ? ` · Sec ${opt.sectionLabel}` : ''}
+                  <b>{n.subjects?.name}</b>
+                  {n.sections?.section_label ? ` · Sec ${n.sections.section_label}` : ''}
                 </li>
-              );
-            })}
-          </ul>
-          <p className="text-xs text-inkFaint mt-4">
-            Submitted{' '}
-            {new Date(existingNominations[0].submitted_at).toLocaleString('en-IN', {
-              dateStyle: 'medium',
-              timeStyle: 'short',
-              timeZone: 'Asia/Kolkata'
-            })}
-            . Nominations can&apos;t be edited, withdrawn, or added to after submission.
-          </p>
+              ))}
+            </ul>
+            <p className="text-xs text-inkFaint mt-4">
+              Submitted{' '}
+              {new Date(existingNominations[0].submitted_at).toLocaleString('en-IN', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+                timeZone: 'Asia/Kolkata'
+              })}
+              . Nominations can&apos;t be edited, withdrawn, or added to after submission.
+            </p>
+          </div>
         </div>
-      </div>
-    );
-  } else {
-    nominationContent = (
-      <div className="flex flex-col gap-3">
-        <p className="text-inkFaint text-sm">
-          Nominate yourself as Subject Representative for up to 3 of your enrolled subjects.
-        </p>
-        {options.length === 0 ? (
-          <p className="text-sm text-inkFaint italic card p-5">
-            No {TERM} enrollments found for you yet — check back once ACAD has loaded the term&apos;s
-            enrollment data.
+      );
+    } else {
+      const { data: enrollments } = await supabase
+        .from('enrollments')
+        .select('subject_id, section_id, subjects(name), sections(section_label)')
+        .eq('student_id', student.id)
+        .eq('term', TERM);
+
+      const options = (enrollments ?? []).map((e: any) => ({
+        subjectId: e.subject_id as string,
+        subjectName: e.subjects?.name as string,
+        sectionId: e.section_id as string | null,
+        sectionLabel: e.sections?.section_label as string | null
+      }));
+
+      nominationContent = (
+        <div className="flex flex-col gap-3">
+          <p className="text-inkFaint text-sm">
+            Nominate yourself as Subject Representative for up to 3 of your enrolled subjects.
           </p>
-        ) : (
-          <NominationForm options={options} term={TERM} />
-        )}
-      </div>
-    );
+          {options.length === 0 ? (
+            <p className="text-sm text-inkFaint italic card p-5">
+              No {TERM} enrollments found for you yet — check back once ACAD has loaded the term&apos;s
+              enrollment data.
+            </p>
+          ) : (
+            <NominationForm options={options} term={TERM} />
+          )}
+        </div>
+      );
+    }
   }
 
   const votingContent = <VotingForm term={TERM} />;
@@ -235,19 +228,7 @@ export default async function SrElectionsPage() {
     <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl">SR Elections — {TERM}</h1>
-        <SrElectionsTabs
-          nomination={nominationContent}
-          voting={votingContent}
-          results={resultsContent}
-          // Voting/Results aren't functional yet for MBA1/Term II — no
-          // sr_votes_term_ii table exists yet (voteTableForTerm('Term II')
-          // would 500 on an actual vote submit — see lib/term2.ts's own
-          // comment) and no sr_assignments rows exist for Term II either, so
-          // Results would only ever show empty. Hiding both tabs for MBA1
-          // until that's real, rather than showing tabs that lead nowhere.
-          // MBA2/Term V keeps all three — unaffected, already live.
-          showVotingAndResults={student.cohort !== 'MBA1'}
-        />
+        <SrElectionsTabs nomination={nominationContent} voting={votingContent} results={resultsContent} />
       </div>
     </Shell>
   );

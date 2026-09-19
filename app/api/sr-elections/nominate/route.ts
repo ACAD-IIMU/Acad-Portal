@@ -26,10 +26,19 @@ export async function POST(req: Request) {
 
   const { data: student } = await supabase
     .from('students')
-    .select('id')
+    .select('id, cohort')
     .eq('auth_user_id', user.id)
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
+
+  // Mirrors app/sr-elections/page.tsx's MBA1_NOMINATIONS_OPEN — kept in sync
+  // manually (no shared config file for this yet). This is the real
+  // enforcement; the page-level gate only swaps out the form, it can't stop
+  // a direct POST here on its own.
+  const MBA1_NOMINATIONS_OPEN = false;
+  if (student.cohort === 'MBA1' && !MBA1_NOMINATIONS_OPEN) {
+    return NextResponse.json({ error: 'Nominations are not open yet for your batch.' }, { status: 403 });
+  }
 
   let body: { term?: string; picks?: Pick[] };
   try {
