@@ -245,8 +245,14 @@ export default async function SrElectionsPage() {
           // comment) and no sr_assignments rows exist for Term II either, so
           // Results would only ever show empty. Hiding both tabs for MBA1
           // until that's real, rather than showing tabs that lead nowhere.
-          // MBA2/Term V keeps all three — unaffected, already live.
           showVotingAndResults={student.cohort !== 'MBA1'}
+          // Opposite situation for MBA2/Term V: its election already happened
+          // and is done, not "not yet ready" — Nomination/Voting have nothing
+          // left to do, so this locks the page straight to Results (every
+          // subject's assigned SR), matching the nav link staying visible.
+          // Manual, per-term toggle — revisit alongside HIDDEN_FOR_MBA2 in
+          // components/Sidebar.tsx once Term VI is the current term.
+          resultsOnly={student.cohort === 'MBA2'}
         />
       </div>
     </Shell>

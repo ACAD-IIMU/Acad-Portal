@@ -20,7 +20,8 @@ export default function SrElectionsTabs({
   nomination,
   voting,
   results,
-  showVotingAndResults = true
+  showVotingAndResults = true,
+  resultsOnly = false
 }: {
   nomination: ReactNode;
   voting: ReactNode;
@@ -30,11 +31,21 @@ export default function SrElectionsTabs({
   // features have no real data behind them yet (e.g. MBA1/Term II — see the
   // comment where this is passed in page.tsx).
   showVotingAndResults?: boolean;
+  // Opposite case from showVotingAndResults=false: a term whose election is
+  // already DONE (MBA2/Term V) rather than not yet started. Nomination/Voting
+  // are over, not "not ready" — so only Results renders, with no tab switcher
+  // at all (nothing else to switch to). Takes priority over
+  // showVotingAndResults when both are passed.
+  resultsOnly?: boolean;
 }) {
   // BUGFIX: this was hardcoded to 'results', so every visitor — including
   // someone who'd never nominated yet — landed on the Results tab first
   // instead of Nomination, the only tab a new visitor can actually act on.
   const [active, setActive] = useState<Tab>('nomination');
+
+  if (resultsOnly) {
+    return <div className="flex flex-col gap-5">{results}</div>;
+  }
 
   if (!showVotingAndResults) {
     return <div className="flex flex-col gap-5">{nomination}</div>;
