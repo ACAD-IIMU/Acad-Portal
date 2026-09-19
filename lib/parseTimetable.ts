@@ -320,11 +320,24 @@ function applyKnownRoomOverride(subjectCode: string, sessionNumber: number, room
 }
 
 /** Splits a cell's text on '/' — the sheet's one intentional separator between concurrent
- * classes. Newlines are deliberately NOT split on here (see extractSessionsFromChunk for why)
- * — they're normalized to spaces instead, since they're often just a soft line-wrap. */
+ * classes — and on a BLANK line (2+ consecutive newlines), which is how the sheet stacks
+ * two otherwise-unrelated entries vertically in one cell, e.g. Term V's
+ * "MSAIC Quiz 1 from 2.20 pm\n\nCPM - S4\n(CR-8B-18)" (a quiz notice sitting above that
+ * slot's real class). A SINGLE newline is deliberately NOT split on (see
+ * extractSessionsFromChunk for why) — it's normalized to a space instead, since within one
+ * entry it's usually just a soft line-wrap (e.g. between "CPM - S4" and its room on the
+ * next line). Without this, the two stacked entries got concatenated by the whitespace
+ * collapse below into one run-on string ("MSAIC Quiz 1 from 2.20 pm CPM - S4 (CR-8B-18)")
+ * that matched the session pattern on its FIRST "- Sn", swallowing "MSAIC Quiz 1 from
+ * 2.20 pm CPM" whole as a single bogus subject code — which resolved against no real
+ * subject, so the quiz never became an event AND that day's real class (CPM's S4) silently
+ * vanished from the calendar instead of just being logged as unmapped.
+ * Split on blank lines FIRST, then '/' within each resulting piece, so a "/"-joined joint
+ * class stacked with a quiz notice still splits correctly on both. */
 function splitCellEntries(cellText: string): string[] {
   return cellText
-    .split("/")
+    .split(/\n\s*\n/)
+    .flatMap((piece) => piece.split("/"))
     .map((s) => s.replace(/\s+/g, " ").trim())
     .filter((s) => s.length > 0);
 }

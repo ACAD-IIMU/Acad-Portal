@@ -18,7 +18,16 @@ export interface CellStrikeInfo {
   runs?: StrikeRun[]; // present only when the cell has multiple rich-text runs
 }
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+// trimValues: false is required — fast-xml-parser trims leading/trailing whitespace from
+// text nodes by default, which silently swallowed the blank-line ("\n\n") that separates two
+// stacked rich-text runs in the same cell (e.g. Term V's "MSAIC Quiz 1 from 2.20 pm\n\n" as
+// run 1, "CPM - S4\n(CR-8B-18)" as run 2 — confirmed directly in the raw sharedStrings.xml,
+// where run 1's own <t xml:space="preserve"> ends in two literal newlines). With the default
+// trim, run 1's text came back as "MSAIC Quiz 1 from 2.20 pm" with no trailing separator at
+// all, so parseTimetable.ts's cellText reconstruction (`keptParts.join(" ")`) glued it
+// directly onto run 2 with just a single space — indistinguishable from a soft line-wrap —
+// which is what let the two stacked entries get merged into one bogus session downstream.
+const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", trimValues: false });
 
 function asArray<T>(x: T | T[] | undefined): T[] {
   if (x === undefined) return [];

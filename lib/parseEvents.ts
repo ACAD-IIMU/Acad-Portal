@@ -126,11 +126,15 @@ function extractEventsFromText(
 
       const code = stripLeadingNoise(rawText.slice(cursor, keywordStart));
 
-      // Tightly-bound instance number right after the keyword (e.g. "Quiz-1"), guarded
-      // against misreading a clock time's leading digit as a number (e.g. the "2" in
-      // "Quiz - 2.30 pm" is not instance number 2).
+      // Tightly-bound instance number right after the keyword — dash optional, so this
+      // catches both "Quiz-1" (Term IV/III style) and "Quiz 1 from ..." (Term V style, e.g.
+      // "MSAIC Quiz 1 from 2.20 pm") — guarded against misreading a clock time's leading
+      // digit as a number (e.g. the "2" in "Quiz - 2.30 pm" / "Quiz 2:30 pm" is not
+      // instance number 2): the lookahead rejects a digit immediately followed by "."/":"
+      // and another digit, which is exactly the shape of a clock time, not a plain instance
+      // number followed by a space.
       const afterKeyword = rawText.slice(keywordEnd);
-      const numMatch = afterKeyword.match(/^\s*-\s*(\d+)(?![.:]\d)/);
+      const numMatch = afterKeyword.match(/^\s*-?\s*(\d+)(?![.:]\d)/);
       const num = numMatch ? numMatch[1] : null;
       const consumedAfterKeyword = numMatch ? numMatch[0].length : 0;
 
