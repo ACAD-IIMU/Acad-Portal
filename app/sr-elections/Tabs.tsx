@@ -19,13 +19,26 @@ const TABS: { id: Tab; label: string }[] = [
 export default function SrElectionsTabs({
   nomination,
   voting,
-  results
+  results,
+  showVotingAndResults = true
 }: {
   nomination: ReactNode;
   voting: ReactNode;
   results: ReactNode;
+  // When false, Voting/Results aren't rendered at all (not just hidden behind
+  // a disabled tab) — page.tsx passes this for a batch+term where those
+  // features have no real data behind them yet (e.g. MBA1/Term II — see the
+  // comment where this is passed in page.tsx).
+  showVotingAndResults?: boolean;
 }) {
-  const [active, setActive] = useState<Tab>('results');
+  // BUGFIX: this was hardcoded to 'results', so every visitor — including
+  // someone who'd never nominated yet — landed on the Results tab first
+  // instead of Nomination, the only tab a new visitor can actually act on.
+  const [active, setActive] = useState<Tab>('nomination');
+
+  if (!showVotingAndResults) {
+    return <div className="flex flex-col gap-5">{nomination}</div>;
+  }
 
   return (
     <div className="flex flex-col gap-5">

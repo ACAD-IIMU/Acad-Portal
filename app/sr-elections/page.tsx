@@ -1,13 +1,40 @@
 // app/sr-elections/page.tsx
 //
-// SR Elections — nomination phase only, for now. Voting comes later as a
-// separate build (see the plan). Same shell pattern as EAP/Home: Sidebar
-// wraps every return path, term hardcoded here same as everywhere else
-// until there's a single source of truth for current_term.
-
-const TERM = 'Term V';
+// SR Elections — nomination + voting + results, cohort-aware. Same shell
+// pattern as EAP/Home: Sidebar wraps every return path.
+//
+// The term is resolved per-student from `cohort` — but NOT symmetrically.
+// MBA2 uses TERM_5, its live current term (lib/term5.ts). MBA1 uses TERM_2,
+// its NEXT term (lib/term2.ts) — not TERM_1, its current one. That's
+// deliberate: elections have to run before the term they're for starts, so
+// there's a rep in place from day one. Term I is 8 days from ending as of
+// this comment (26 Sep 2026) — electing a Term I rep now would barely serve
+// anyone. Term II is the term this election actually needs to staff. See
+// lib/term2.ts for the full reasoning, including the precedent this follows
+// (app/eap/page.tsx's existing "current term + 1" pattern for elective bids).
+// `batch_label` isn't the right key here — that's stable for the batch's
+// whole life, while "current/next term" rotates each year.
+//
+// Cross-cohort isolation: sr_nominations and sr_assignments are scoped by
+// `term` alone (no batch_label column). That's safe today because MBA1's
+// 'Term II' and MBA2's 'Term V' can never string-match — the same reasoning
+// lib/term5.ts and the sync-timetable route already rely on. If two batches
+// ever share a term label at the same time (e.g. both on 'Term III' one day),
+// sr_nominations/sr_assignments will need a batch_label column added, same as
+// subjects/sections/sessions already got in the batch_label_step*.sql
+// migration. Not urgent — flagging so it's on the record.
+//
+// Voting-table split: voteTableForTerm() returns a per-term PHYSICAL table
+// (sr_votes_term_v, sr_votes_term_ii, ...). Someone has to create
+// sr_votes_term_ii in Supabase before MBA1's voting phase opens, mirroring
+// sr_votes_term_v — this is the existing per-term operational step, just
+// applied to a second cohort's (upcoming) term for the first time. Until
+// then the page still loads fine for MBA1 (nomination + empty voting/results
+// state); only an actual vote submit would 500.
 
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { TERM_2 } from '@/lib/term2';
+import { TERM_5 } from '@/lib/term5';
 import Sidebar from '@/components/Sidebar';
 import UserMenu from '@/components/UserMenu';
 import NominationForm from './NominationForm';
@@ -60,32 +87,59 @@ export default async function SrElectionsPage() {
     <UserMenu name={student.full_name} regNo={student.reg_no} batchLabel={student.batch_label} />
   );
 
-  // SR Elections is hardcoded to TERM = 'Term V' (MBA2) throughout this page, including
-  // the admin-client srAssignments query below that returns OTHER STUDENTS' names, roll
-  // numbers, emails, and phone numbers — that query is deliberately unscoped by viewer
-  // ("public-within-the-portal information", per its own comment), which stops being a
-  // safe assumption the moment a second cohort exists who shouldn't see MBA2's SR
-  // roster. Blocked here, before that query (or the nomination/enrollment ones) ever
-  // runs — this is the actual fix for a real MBA1 student having seen exactly that data
-  // (confirmed directly, not theoretical). Hiding the nav link alone (see
-  // components/Sidebar.tsx's HIDDEN_FOR_MBA1) would not have stopped this — that only
-  // covers arriving via the sidebar, not a bookmark, browser history, or a typed URL.
-  if (student.cohort === 'MBA1') {
-    return (
-      <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
-        <div className="card p-6">
-          <p className="text-sm text-inkSoft">
-            SR Elections isn&apos;t open for your batch yet. Check back once ACAD announces it for
-            MBA 2026-28.
-          </p>
-        </div>
-      </Shell>
-    );
-  }
+  // Which cohort this student is in decides which term constant applies —
+  // MBA1 gets TERM_2 (the term being elected FOR), MBA2 gets TERM_5 (its
+  // live current term). Every DB read below scopes by this TERM, which is
+  // the actual isolation between cohorts: an MBA1 student's sr_nominations /
+  // enrollments / sr_assignments queries only ever return Term II rows, and
+  // an MBA2 student's only ever return Term V rows, even though those tables
+  // have no batch_label column of their own. This is the same reason the
+  // earlier hard block for MBA1 could safely be removed — the "MBA1 student
+  // saw MBA2's SR roster" exposure came from the previous TERM constant being
+  // hardcoded to 'Term V' for everyone, not from anything the admin-client
+  // srAssignments query does wrong on its own; now that TERM tracks the
+  // viewer's cohort (and, for MBA1, the term ahead rather than the term now),
+  // the same query returns exactly and only that cohort's roster.
+  const TERM = student.cohort === 'MBA1' ? TERM_2 : TERM_5;
 
+  // Fetched unconditionally now (used to be only inside the "no existing
+  // nomination" branch below) — also doubles as the lookup table for
+  // resolving an already-submitted nomination's subject/section names, see
+  // the comment on existingNominations just below for why.
+  const { data: enrollments } = await supabase
+    .from('enrollments')
+    .select('subject_id, section_id, subjects(name), sections(section_label)')
+    .eq('student_id', student.id)
+    .eq('term', TERM);
+
+  const options = (enrollments ?? []).map((e: any) => ({
+    subjectId: e.subject_id as string,
+    subjectName: e.subjects?.name as string,
+    sectionId: e.section_id as string | null,
+    sectionLabel: e.sections?.section_label as string | null
+  }));
+
+  // BUGFIX: this used to embed subjects(name)/sections(section_label) directly
+  // into this select, the same way `enrollments` above does. Real symptom that
+  // traced back to this: a student who'd already submitted was shown the
+  // interactive NominationForm again on a fresh visit, with no indication
+  // anything was wrong, and only found out on a second submit attempt (which
+  // the API correctly rejects with "already submitted" — see
+  // app/api/sr-elections/nominate/route.ts's own duplicate check, the exact
+  // same table+filters with NO embed, which reliably finds the row). Likely
+  // cause: sr_nominations isn't in supabase/schema.sql — it was added live in
+  // Supabase — and is most likely missing the foreign-key constraints on
+  // subject_id/section_id that PostgREST's embed syntax needs to resolve the
+  // join; without them the embedded query can silently return nothing. This
+  // file never checks `error` on any of its queries (matching its existing
+  // style throughout), so that failure was invisible rather than surfaced.
+  // Fix: read only sr_nominations' own plain columns (proven to work, same
+  // shape as the API's working check) and resolve subject/section names from
+  // `options` above instead of a second embed — sidesteps the problem
+  // regardless of its exact cause, no production DB change required.
   const { data: existingNominations } = await supabase
     .from('sr_nominations')
-    .select('subject_id, section_id, priority, submitted_at, subjects(name), sections(section_label)')
+    .select('subject_id, section_id, priority, submitted_at')
     .eq('student_id', student.id)
     .eq('term', TERM)
     .order('priority', { ascending: true });
@@ -103,15 +157,20 @@ export default async function SrElectionsPage() {
             You&apos;re nominated for Subject Representative in:
           </p>
           <ul className="flex flex-col gap-2">
-            {existingNominations.map((n: any, i: number) => (
-              <li key={i} className="flex items-center gap-3 text-sm">
-                <span className="w-6 h-6 rounded-full bg-brand-900 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-                  {n.priority}
-                </span>
-                <b>{n.subjects?.name}</b>
-                {n.sections?.section_label ? ` · Sec ${n.sections.section_label}` : ''}
-              </li>
-            ))}
+            {existingNominations.map((n, i) => {
+              const opt = options.find(
+                (o) => o.subjectId === n.subject_id && o.sectionId === n.section_id
+              );
+              return (
+                <li key={i} className="flex items-center gap-3 text-sm">
+                  <span className="w-6 h-6 rounded-full bg-brand-900 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                    {n.priority}
+                  </span>
+                  <b>{opt?.subjectName ?? 'Subject'}</b>
+                  {opt?.sectionLabel ? ` · Sec ${opt.sectionLabel}` : ''}
+                </li>
+              );
+            })}
           </ul>
           <p className="text-xs text-inkFaint mt-4">
             Submitted{' '}
@@ -126,19 +185,6 @@ export default async function SrElectionsPage() {
       </div>
     );
   } else {
-    const { data: enrollments } = await supabase
-      .from('enrollments')
-      .select('subject_id, section_id, subjects(name), sections(section_label)')
-      .eq('student_id', student.id)
-      .eq('term', TERM);
-
-    const options = (enrollments ?? []).map((e: any) => ({
-      subjectId: e.subject_id as string,
-      subjectName: e.subjects?.name as string,
-      sectionId: e.section_id as string | null,
-      sectionLabel: e.sections?.section_label as string | null
-    }));
-
     nominationContent = (
       <div className="flex flex-col gap-3">
         <p className="text-inkFaint text-sm">
@@ -189,7 +235,19 @@ export default async function SrElectionsPage() {
     <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl">SR Elections — {TERM}</h1>
-        <SrElectionsTabs nomination={nominationContent} voting={votingContent} results={resultsContent} />
+        <SrElectionsTabs
+          nomination={nominationContent}
+          voting={votingContent}
+          results={resultsContent}
+          // Voting/Results aren't functional yet for MBA1/Term II — no
+          // sr_votes_term_ii table exists yet (voteTableForTerm('Term II')
+          // would 500 on an actual vote submit — see lib/term2.ts's own
+          // comment) and no sr_assignments rows exist for Term II either, so
+          // Results would only ever show empty. Hiding both tabs for MBA1
+          // until that's real, rather than showing tabs that lead nowhere.
+          // MBA2/Term V keeps all three — unaffected, already live.
+          showVotingAndResults={student.cohort !== 'MBA1'}
+        />
       </div>
     </Shell>
   );
