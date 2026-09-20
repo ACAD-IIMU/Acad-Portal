@@ -56,6 +56,16 @@ export const dynamic = 'force-dynamic';
 // MBA2's Term V nomination window already ran and is untouched by this.
 const MBA1_NOMINATIONS_OPEN = true;
 
+// Same idea, one phase later: MBA1's Term II nomination window has now closed
+// and voting is open -- flip to true and push once ACAD announces the voting
+// start (mirrored in app/api/sr-elections/vote/route.ts's own
+// MBA1_VOTING_OPEN, same reasoning as MBA1_NOMINATIONS_OPEN's mirror in
+// nominate/route.ts: the page-level gate only swaps out which tabs render,
+// it can't stop a direct POST to /api/sr-elections/vote on its own). Requires
+// sr_votes_term_ii to actually exist in Supabase (mirroring sr_votes_term_v)
+// before flipping this -- see voteTable.ts -- otherwise a vote submit 500s.
+const MBA1_VOTING_OPEN = true;
+
 function Shell({
   batchLabel,
   cohort,
@@ -232,13 +242,12 @@ export default async function SrElectionsPage() {
           nomination={nominationContent}
           voting={votingContent}
           results={resultsContent}
-          // Voting/Results aren't functional yet for MBA1/Term II — no
-          // sr_votes_term_ii table exists yet (voteTableForTerm('Term II')
-          // would 500 on an actual vote submit — see lib/term2.ts's own
-          // comment) and no sr_assignments rows exist for Term II either, so
-          // Results would only ever show empty. Hiding both tabs for MBA1
-          // until that's real, rather than showing tabs that lead nowhere.
-          showVotingAndResults={student.cohort !== 'MBA1'}
+          // MBA1_VOTING_OPEN above gates this now that nominations have
+          // closed and sr_votes_term_ii exists — see that constant's comment.
+          // Results will show empty until sr_assignments rows exist for Term
+          // II (that happens once votes are tallied), which is an already-
+          // established, non-broken empty state, not a reason to hide it.
+          showVotingAndResults={student.cohort !== 'MBA1' || MBA1_VOTING_OPEN}
           // Opposite situation for MBA2/Term V: its election already happened
           // and is done, not "not yet ready" — Nomination/Voting have nothing
           // left to do, so this locks the page straight to Results (every

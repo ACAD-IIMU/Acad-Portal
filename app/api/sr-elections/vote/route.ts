@@ -22,10 +22,20 @@ export async function POST(req: Request) {
 
   const { data: student } = await supabase
     .from('students')
-    .select('id')
+    .select('id, cohort')
     .eq('auth_user_id', user.id)
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
+
+  // Mirrors app/sr-elections/page.tsx's MBA1_VOTING_OPEN — kept in sync
+  // manually (no shared config file for this yet), same reasoning as
+  // nominate/route.ts's own MBA1_NOMINATIONS_OPEN mirror: the page-level gate
+  // only swaps out which tabs render, it can't stop a direct POST here on
+  // its own.
+  const MBA1_VOTING_OPEN = true;
+  if (student.cohort === 'MBA1' && !MBA1_VOTING_OPEN) {
+    return NextResponse.json({ error: 'Voting is not open yet for your batch.' }, { status: 403 });
+  }
 
   let body: { term?: string; votes?: Vote[] };
   try {
