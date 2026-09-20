@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   // manually (no shared config file for this yet). This is the real
   // enforcement; the page-level gate only swaps out the form, it can't stop
   // a direct POST here on its own.
-  const MBA1_NOMINATIONS_OPEN = false;
+  const MBA1_NOMINATIONS_OPEN = true;
   if (student.cohort === 'MBA1' && !MBA1_NOMINATIONS_OPEN) {
     return NextResponse.json({ error: 'Nominations are not open yet for your batch.' }, { status: 403 });
   }

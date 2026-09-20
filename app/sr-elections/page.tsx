@@ -54,7 +54,7 @@ export const dynamic = 'force-dynamic';
 // the way a UI-only hide never actually stops a determined request — same
 // lesson as HIDDEN_FOR_MBA1 in components/Sidebar.tsx. Only gates MBA1:
 // MBA2's Term V nomination window already ran and is untouched by this.
-const MBA1_NOMINATIONS_OPEN = false;
+const MBA1_NOMINATIONS_OPEN = true;
 
 function Shell({
   batchLabel,
