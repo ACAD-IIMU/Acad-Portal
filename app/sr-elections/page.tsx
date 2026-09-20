@@ -56,15 +56,25 @@ export const dynamic = 'force-dynamic';
 // MBA2's Term V nomination window already ran and is untouched by this.
 const MBA1_NOMINATIONS_OPEN = true;
 
-// Same idea, one phase later: MBA1's Term II nomination window has now closed
-// and voting is open -- flip to true and push once ACAD announces the voting
-// start (mirrored in app/api/sr-elections/vote/route.ts's own
-// MBA1_VOTING_OPEN, same reasoning as MBA1_NOMINATIONS_OPEN's mirror in
-// nominate/route.ts: the page-level gate only swaps out which tabs render,
-// it can't stop a direct POST to /api/sr-elections/vote on its own). Requires
-// sr_votes_term_ii to actually exist in Supabase (mirroring sr_votes_term_v)
-// before flipping this -- see voteTable.ts -- otherwise a vote submit 500s.
-const MBA1_VOTING_OPEN = true;
+// Same idea, one phase later: MBA1's Term II nomination window is still open
+// (or just closed) but voting hasn't started yet -- flip to true and push
+// once ACAD announces the voting start (mirrored in
+// app/api/sr-elections/vote/route.ts's own MBA1_VOTING_OPEN, same reasoning
+// as MBA1_NOMINATIONS_OPEN's mirror in nominate/route.ts: the page-level gate
+// only swaps out what renders UNDER the Voting/Results tabs, it can't stop a
+// direct POST to /api/sr-elections/vote on its own). Requires sr_votes_term_ii
+// to actually exist in Supabase (mirroring sr_votes_term_v) before flipping
+// this -- see voteTable.ts -- otherwise a vote submit 500s.
+//
+// NOTE: this used to also control whether the Voting/Results TABS were shown
+// at all (via SrElectionsTabs' showVotingAndResults prop) -- students asked
+// for the tabs to stay visible even while voting is closed, so they can see
+// at a glance that Voting/Results exist and aren't just missing, rather than
+// only Nomination being there. The tabs are now always shown (see the
+// SrElectionsTabs call below, which no longer passes showVotingAndResults);
+// this flag now only decides what's rendered *inside* the Voting/Results
+// tabs -- the live form/results vs. a "not open yet" message.
+const MBA1_VOTING_OPEN = false;
 
 function Shell({
   batchLabel,
@@ -123,6 +133,7 @@ export default async function SrElectionsPage() {
   const TERM = student.cohort === 'MBA1' ? TERM_2 : TERM_5;
 
   const nominationsOpenForViewer = student.cohort !== 'MBA1' || MBA1_NOMINATIONS_OPEN;
+  const votingOpenForViewer = student.cohort !== 'MBA1' || MBA1_VOTING_OPEN;
 
   let nominationContent: ReactNode;
 
@@ -205,7 +216,13 @@ export default async function SrElectionsPage() {
     }
   }
 
-  const votingContent = <VotingForm term={TERM} />;
+  const notOpenYet = (label: string) => (
+    <p className="text-sm text-inkFaint italic card p-5">
+      {label} isn&apos;t open yet — check back soon.
+    </p>
+  );
+
+  const votingContent = votingOpenForViewer ? <VotingForm term={TERM} /> : notOpenYet('Voting');
 
   // Results: read from sr_assignments directly (not re-derived from votes) — this is
   // the exact table that grants real SR access site-wide, so the list shown here can
@@ -215,24 +232,33 @@ export default async function SrElectionsPage() {
   // every other query on this page is, so the regular per-request client — which
   // would only ever see rows RLS allows for the logged-in student — isn't the right
   // tool here.
-  const admin = createAdminClient();
-  const { data: srAssignments } = await admin
-    .from('sr_assignments')
-    .select('subjects(name), sections(section_label), students(full_name, reg_no, email, phone)')
-    .eq('term', TERM);
+  //
+  // Skipped entirely while votingOpenForViewer is false — there can't be real
+  // results yet (assignments only exist once votes are tallied, which is after
+  // voting closes), so there's no reason to make this query at all until then.
+  let resultsContent: ReactNode;
+  if (!votingOpenForViewer) {
+    resultsContent = notOpenYet('Results');
+  } else {
+    const admin = createAdminClient();
+    const { data: srAssignments } = await admin
+      .from('sr_assignments')
+      .select('subjects(name), sections(section_label), students(full_name, reg_no, email, phone)')
+      .eq('term', TERM);
 
-  const resultsRows = (srAssignments ?? [])
-    .map((r: any) => ({
-      subjectName: r.subjects?.name ?? '—',
-      sectionLabel: r.sections?.section_label ?? null,
-      fullName: r.students?.full_name ?? '—',
-      regNo: r.students?.reg_no ?? '—',
-      email: r.students?.email ?? '—',
-      phone: r.students?.phone ?? null
-    }))
-    .sort((a, b) => a.subjectName.localeCompare(b.subjectName) || (a.sectionLabel ?? '').localeCompare(b.sectionLabel ?? ''));
+    const resultsRows = (srAssignments ?? [])
+      .map((r: any) => ({
+        subjectName: r.subjects?.name ?? '—',
+        sectionLabel: r.sections?.section_label ?? null,
+        fullName: r.students?.full_name ?? '—',
+        regNo: r.students?.reg_no ?? '—',
+        email: r.students?.email ?? '—',
+        phone: r.students?.phone ?? null
+      }))
+      .sort((a, b) => a.subjectName.localeCompare(b.subjectName) || (a.sectionLabel ?? '').localeCompare(b.sectionLabel ?? ''));
 
-  const resultsContent = <Results rows={resultsRows} />;
+    resultsContent = <Results rows={resultsRows} />;
+  }
 
   return (
     <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
@@ -242,12 +268,13 @@ export default async function SrElectionsPage() {
           nomination={nominationContent}
           voting={votingContent}
           results={resultsContent}
-          // MBA1_VOTING_OPEN above gates this now that nominations have
-          // closed and sr_votes_term_ii exists — see that constant's comment.
-          // Results will show empty until sr_assignments rows exist for Term
-          // II (that happens once votes are tallied), which is an already-
-          // established, non-broken empty state, not a reason to hide it.
-          showVotingAndResults={student.cohort !== 'MBA1' || MBA1_VOTING_OPEN}
+          // showVotingAndResults intentionally NOT passed here (defaults to
+          // true in Tabs.tsx) — the tab switcher itself is always visible for
+          // MBA1 now, even while voting is closed, so students can see
+          // Voting/Results exist rather than only ever seeing Nomination.
+          // MBA1_VOTING_OPEN above still fully controls what's actually
+          // rendered UNDER those tabs (see votingContent/resultsContent).
+          //
           // Opposite situation for MBA2/Term V: its election already happened
           // and is done, not "not yet ready" — Nomination/Voting have nothing
           // left to do, so this locks the page straight to Results (every
