@@ -74,6 +74,14 @@ const NAV_ITEMS: NavItem[] = [
 // never decided for it.
 const HIDDEN_FOR_MBA1 = new Set(['/eap', '/planner']);
 
+// MBA2/Term V-only hide, added once Term V's own elective bidding + planning cycle
+// was done — Term Planner no longer serves this batch this term. This is a manual,
+// per-term toggle (not a permanent per-batch rule): expect this to move to whichever
+// href/cohort combination is current once Term VI starts, not stay MBA2-specific
+// forever. SR Elections is deliberately NOT in this set — that stays visible for
+// MBA2, just locked to its Results tab (see app/sr-elections/page.tsx).
+const HIDDEN_FOR_MBA2 = new Set(['/planner']);
+
 const COLLAPSE_KEY = 'acad-sidebar-collapsed';
 
 export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; cohort?: string }) {
@@ -82,8 +90,11 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
   const [collapsed, setCollapsed] = useState(false); // desktop rail
   const [hydrated, setHydrated] = useState(false);
 
-  const visibleNavItems =
-    cohort === 'MBA1' ? NAV_ITEMS.filter((item) => !HIDDEN_FOR_MBA1.has(item.href)) : NAV_ITEMS;
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (cohort === 'MBA1' && HIDDEN_FOR_MBA1.has(item.href)) return false;
+    if (cohort === 'MBA2' && HIDDEN_FOR_MBA2.has(item.href)) return false;
+    return true;
+  });
 
   // Read persisted collapse state once on mount. Gated behind `hydrated` so
   // the server-rendered markup (always "expanded") matches the client's first

@@ -34,7 +34,14 @@ export default async function PlannerPage() {
   // — not relevant to MBA1 yet, and no MBA1 version of this dataset has been generated.
   // Blocked here rather than just hidden from the nav (components/Sidebar.tsx's
   // HIDDEN_FOR_MBA1) so a direct URL doesn't show MBA2's course/elective data either.
-  if (student?.cohort === 'MBA1') {
+  //
+  // MBA2/Term V is ALSO blocked now, separately: Term V's own bidding cycle is done,
+  // so the planner has nothing left to serve this batch this term either. This is a
+  // manual, per-term toggle (see components/Sidebar.tsx's HIDDEN_FOR_MBA2) — expect
+  // this condition to move to whichever cohort is current once Term VI starts, not
+  // stay MBA2-specific forever.
+  if (student?.cohort === 'MBA1' || student?.cohort === 'MBA2') {
+    const isMba1 = student?.cohort === 'MBA1';
     return (
       <div className="flex min-h-screen">
         <Sidebar batchLabel={student.batch_label} cohort={student.cohort} />
@@ -43,8 +50,9 @@ export default async function PlannerPage() {
             <div>
               <h1 className="text-2xl">Term Planner</h1>
               <p className="text-inkFaint text-sm">
-                Not available for your batch yet — this covers elective planning, which opens
-                later in the program.
+                {isMba1
+                  ? 'Not available for your batch yet — this covers elective planning, which opens later in the program.'
+                  : 'Term Planner is currently unavailable for your term.'}
               </p>
             </div>
             <UserMenu name={student.full_name ?? 'Student'} regNo={student.reg_no} batchLabel={student.batch_label} />

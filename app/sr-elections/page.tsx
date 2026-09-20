@@ -228,7 +228,25 @@ export default async function SrElectionsPage() {
     <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl">SR Elections — {TERM}</h1>
-        <SrElectionsTabs nomination={nominationContent} voting={votingContent} results={resultsContent} />
+        <SrElectionsTabs
+          nomination={nominationContent}
+          voting={votingContent}
+          results={resultsContent}
+          // Voting/Results aren't functional yet for MBA1/Term II — no
+          // sr_votes_term_ii table exists yet (voteTableForTerm('Term II')
+          // would 500 on an actual vote submit — see lib/term2.ts's own
+          // comment) and no sr_assignments rows exist for Term II either, so
+          // Results would only ever show empty. Hiding both tabs for MBA1
+          // until that's real, rather than showing tabs that lead nowhere.
+          showVotingAndResults={student.cohort !== 'MBA1'}
+          // Opposite situation for MBA2/Term V: its election already happened
+          // and is done, not "not yet ready" — Nomination/Voting have nothing
+          // left to do, so this locks the page straight to Results (every
+          // subject's assigned SR), matching the nav link staying visible.
+          // Manual, per-term toggle — revisit alongside HIDDEN_FOR_MBA2 in
+          // components/Sidebar.tsx once Term VI is the current term.
+          resultsOnly={student.cohort === 'MBA2'}
+        />
       </div>
     </Shell>
   );
