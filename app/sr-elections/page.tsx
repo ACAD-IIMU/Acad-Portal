@@ -35,6 +35,7 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { TERM_2 } from '@/lib/term2';
 import { TERM_5 } from '@/lib/term5';
+import { subjectDisplayName } from '@/lib/subjectFullNames';
 import Sidebar from '@/components/Sidebar';
 import UserMenu from '@/components/UserMenu';
 import NominationForm from './NominationForm';
@@ -167,7 +168,7 @@ export default async function SrElectionsPage() {
                   <span className="w-6 h-6 rounded-full bg-brand-900 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
                     {n.priority}
                   </span>
-                  <b>{n.subjects?.name}</b>
+                  <b>{subjectDisplayName(n.subjects?.name, TERM)}</b>
                   {n.sections?.section_label ? ` · Sec ${n.sections.section_label}` : ''}
                 </li>
               ))}
@@ -193,7 +194,7 @@ export default async function SrElectionsPage() {
 
       const options = (enrollments ?? []).map((e: any) => ({
         subjectId: e.subject_id as string,
-        subjectName: e.subjects?.name as string,
+        subjectName: subjectDisplayName(e.subjects?.name, TERM),
         sectionId: e.section_id as string | null,
         sectionLabel: e.sections?.section_label as string | null
       }));
@@ -248,7 +249,7 @@ export default async function SrElectionsPage() {
 
     const resultsRows = (srAssignments ?? [])
       .map((r: any) => ({
-        subjectName: r.subjects?.name ?? '—',
+        subjectName: subjectDisplayName(r.subjects?.name, TERM) || '—',
         sectionLabel: r.sections?.section_label ?? null,
         fullName: r.students?.full_name ?? '—',
         regNo: r.students?.reg_no ?? '—',

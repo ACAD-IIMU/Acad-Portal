@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { voteTableForTerm } from '@/app/sr-elections/voteTable';
+import { subjectDisplayName } from '@/lib/subjectFullNames';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -49,7 +50,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       locked: true,
       votes: existingVotes.map((v: any) => ({
-        subjectName: v.subjects?.name,
+        subjectName: subjectDisplayName(v.subjects?.name, term),
         sectionLabel: v.sections?.section_label ?? null,
         candidateName: nameById.get(v.candidate_student_id) ?? 'Unknown'
       }))
@@ -84,7 +85,7 @@ export async function GET(req: Request) {
       .map((n: any) => ({ id: n.student_id, name: n.students?.full_name ?? 'Unknown' }));
     return {
       subjectId: e.subject_id,
-      subjectName: e.subjects?.name,
+      subjectName: subjectDisplayName(e.subjects?.name, term),
       sectionId: e.section_id,
       sectionLabel: e.sections?.section_label ?? null,
       candidates
