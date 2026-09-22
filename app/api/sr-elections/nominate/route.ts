@@ -31,13 +31,21 @@ export async function POST(req: Request) {
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
 
-  // Mirrors app/sr-elections/page.tsx's MBA1_NOMINATIONS_OPEN — kept in sync
-  // manually (no shared config file for this yet). This is the real
+  // Mirrors app/sr-elections/page.tsx's MBA1_NOMINATIONS_CLOSE_AT — kept in
+  // sync manually (no shared config file for this yet). This is the real
   // enforcement; the page-level gate only swaps out the form, it can't stop
-  // a direct POST here on its own.
-  const MBA1_NOMINATIONS_OPEN = true;
+  // a direct POST here on its own. Computed fresh on every request, same as
+  // page.tsx does — see that file's comment for why a module-level const
+  // would risk going stale in a warm serverless instance across midnight.
+  const MBA1_NOMINATIONS_CLOSE_AT = new Date('2026-09-23T00:00:00+05:30');
+  const MBA1_NOMINATIONS_OPEN = new Date() < MBA1_NOMINATIONS_CLOSE_AT;
   if (student.cohort === 'MBA1' && !MBA1_NOMINATIONS_OPEN) {
-    return NextResponse.json({ error: 'Nominations are not open yet for your batch.' }, { status: 403 });
+    // Same wording fix as app/sr-elections/page.tsx: this can now only ever
+    // fire because the cutoff passed (nominations were already open before
+    // this endpoint existed in its current form), not because they haven't
+    // started — "not open yet" would be backwards for a student hitting
+    // this after close.
+    return NextResponse.json({ error: 'Nominations are closed. Voting is now open.' }, { status: 403 });
   }
 
   let body: { term?: string; picks?: Pick[] };

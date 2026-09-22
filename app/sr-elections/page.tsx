@@ -47,35 +47,21 @@ import type { ReactNode } from 'react';
 // Per-student data (own enrollments, own nomination state) — never cache/serve stale.
 export const dynamic = 'force-dynamic';
 
-// MBA1's Term II election date isn't fixed yet, so this is a plain manual
-// switch rather than a date comparison — flip to true and push once ACAD
-// actually announces the start. Mirrored (not shared — no config file exists
-// for this yet) in the matching guard at the top of
-// app/api/sr-elections/nominate/route.ts, so a direct POST can't bypass this
-// the way a UI-only hide never actually stops a determined request — same
-// lesson as HIDDEN_FOR_MBA1 in components/Sidebar.tsx. Only gates MBA1:
-// MBA2's Term V nomination window already ran and is untouched by this.
-const MBA1_NOMINATIONS_OPEN = true;
-
-// Same idea, one phase later: MBA1's Term II nomination window is still open
-// (or just closed) but voting hasn't started yet -- flip to true and push
-// once ACAD announces the voting start (mirrored in
-// app/api/sr-elections/vote/route.ts's own MBA1_VOTING_OPEN, same reasoning
-// as MBA1_NOMINATIONS_OPEN's mirror in nominate/route.ts: the page-level gate
-// only swaps out what renders UNDER the Voting/Results tabs, it can't stop a
-// direct POST to /api/sr-elections/vote on its own). Requires sr_votes_term_ii
-// to actually exist in Supabase (mirroring sr_votes_term_v) before flipping
-// this -- see voteTable.ts -- otherwise a vote submit 500s.
-//
-// NOTE: this used to also control whether the Voting/Results TABS were shown
-// at all (via SrElectionsTabs' showVotingAndResults prop) -- students asked
-// for the tabs to stay visible even while voting is closed, so they can see
-// at a glance that Voting/Results exist and aren't just missing, rather than
-// only Nomination being there. The tabs are now always shown (see the
-// SrElectionsTabs call below, which no longer passes showVotingAndResults);
-// this flag now only decides what's rendered *inside* the Voting/Results
-// tabs -- the live form/results vs. a "not open yet" message.
-const MBA1_VOTING_OPEN = false;
+// Nominations close / voting opens automatically at midnight IST, 23 Sep
+// 2026 (the instant 22 Sep 2026 ends) — ACAD confirmed this exact cutoff, so
+// this is a time comparison now instead of the manual flip-and-redeploy the
+// two comments below used to describe. Change this one line if the real
+// cutoff moves. The comparison against it happens INSIDE the request
+// handler below, not up here — a plain top-level `const someBool = new
+// Date() < cutoff` evaluated at module load could get frozen at whatever
+// moment a warm serverless instance first loaded this file, and silently
+// miss the cutoff for the rest of that instance's life if it survives past
+// midnight. Mirrored the same way (not shared — no config file exists for
+// this yet) in app/api/sr-elections/nominate/route.ts and
+// app/api/sr-elections/vote/route.ts, both of which already compute their
+// own copy inside their POST handler, so this brings page.tsx in line with
+// how those two already work.
+const MBA1_NOMINATIONS_CLOSE_AT = new Date('2026-09-23T00:00:00+05:30');
 
 function Shell({
   batchLabel,
@@ -133,15 +119,31 @@ export default async function SrElectionsPage() {
   // the same query returns exactly and only that cohort's roster.
   const TERM = student.cohort === 'MBA1' ? TERM_2 : TERM_5;
 
-  const nominationsOpenForViewer = student.cohort !== 'MBA1' || MBA1_NOMINATIONS_OPEN;
-  const votingOpenForViewer = student.cohort !== 'MBA1' || MBA1_VOTING_OPEN;
+  // Computed fresh on every request (see the comment on
+  // MBA1_NOMINATIONS_CLOSE_AT above for why this isn't module-level).
+  // Nominations and voting share one cutoff — voting starts the instant
+  // nominations close, no gap — so these are just the two sides of the
+  // same comparison.
+  const mba1NominationsOpen = new Date() < MBA1_NOMINATIONS_CLOSE_AT;
+  const nominationsOpenForViewer = student.cohort !== 'MBA1' || mba1NominationsOpen;
+  const votingOpenForViewer = student.cohort !== 'MBA1' || !mba1NominationsOpen;
 
   let nominationContent: ReactNode;
 
+  // The single cutoff above means nominationsOpenForViewer can now only ever
+  // go from true to false one way: nominations were already open, then the
+  // cutoff passed. So this message should describe CLOSED, not "hasn't
+  // started" — that earlier wording was left over from before nominations
+  // had ever opened, and left unattended would tell a student who already
+  // submitted hours ago that nothing has happened yet, which reads as their
+  // submission having vanished. If a future term ever needs a genuine
+  // "not open yet, hasn't started" state again (a real gap before opening,
+  // not just this closes-then-voting-opens cutover), that's a different
+  // condition from this one and needs its own message, not a reuse of this.
   if (!nominationsOpenForViewer) {
     nominationContent = (
       <p className="text-sm text-inkFaint italic card p-5">
-        SR Elections haven&apos;t started yet — check back soon.
+        Nominations are closed. Voting is now open — head to the Voting tab.
       </p>
     );
   } else {
@@ -273,7 +275,7 @@ export default async function SrElectionsPage() {
           // true in Tabs.tsx) — the tab switcher itself is always visible for
           // MBA1 now, even while voting is closed, so students can see
           // Voting/Results exist rather than only ever seeing Nomination.
-          // MBA1_VOTING_OPEN above still fully controls what's actually
+          // votingOpenForViewer above still fully controls what's actually
           // rendered UNDER those tabs (see votingContent/resultsContent).
           //
           // Opposite situation for MBA2/Term V: its election already happened

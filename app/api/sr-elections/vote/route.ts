@@ -27,13 +27,14 @@ export async function POST(req: Request) {
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
 
-  // Mirrors app/sr-elections/page.tsx's MBA1_VOTING_OPEN — kept in sync
-  // manually (no shared config file for this yet), same reasoning as
-  // nominate/route.ts's own MBA1_NOMINATIONS_OPEN mirror: the page-level gate
-  // only swaps out what renders under the Voting tab (which is now always
-  // visible, even while this is false), it can't stop a direct POST here on
-  // its own — this check is the real enforcement.
-  const MBA1_VOTING_OPEN = false;
+  // Mirrors app/sr-elections/page.tsx's MBA1_NOMINATIONS_CLOSE_AT, same
+  // reasoning as nominate/route.ts's own mirror: the page-level gate only
+  // swaps out what renders under the Voting tab, it can't stop a direct
+  // POST here on its own — this check is the real enforcement. Computed
+  // fresh on every request; voting opens the instant nominations close, so
+  // this is just the other side of the same cutoff.
+  const MBA1_NOMINATIONS_CLOSE_AT = new Date('2026-09-23T00:00:00+05:30');
+  const MBA1_VOTING_OPEN = new Date() >= MBA1_NOMINATIONS_CLOSE_AT;
   if (student.cohort === 'MBA1' && !MBA1_VOTING_OPEN) {
     return NextResponse.json({ error: 'Voting is not open yet for your batch.' }, { status: 403 });
   }
