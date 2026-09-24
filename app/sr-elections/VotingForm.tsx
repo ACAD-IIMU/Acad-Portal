@@ -112,6 +112,22 @@ export default function VotingForm({ term }: { term: string }) {
           }))
         })
       });
+
+      // A non-JSON response here means something intercepted the request
+      // before this route's own code ever ran — in practice, almost always
+      // the auth middleware redirecting to /login because the session
+      // expired while this tab sat open (fetch() follows that redirect
+      // silently, so res.ok can even be true). res.json() on an HTML page
+      // throws a raw "Unexpected token '<'" parse error that tells a
+      // student nothing useful; this turns it into something actionable.
+      // The middleware itself now also returns a clean 401 for API routes
+      // rather than redirecting, so this is a defensive backstop, not the
+      // only fix.
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('Your session has expired. Please refresh the page, sign in again, then resubmit.');
+      }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Failed to submit votes');
       setDone(true);

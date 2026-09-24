@@ -71,6 +71,16 @@ export default function NominationForm({ options, term }: { options: Option[]; t
           }))
         })
       });
+
+      // Same defensive guard as VotingForm.tsx's identical fetch call — see
+      // that file's comment for the full reasoning (middleware redirecting
+      // an expired session to /login, whose HTML this route's res.json()
+      // would otherwise choke on with a raw parse error).
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('Your session has expired. Please refresh the page, sign in again, then resubmit.');
+      }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Failed to submit nomination');
       setDone(true);
