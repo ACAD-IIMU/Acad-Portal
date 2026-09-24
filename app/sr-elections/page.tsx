@@ -63,6 +63,17 @@ export const dynamic = 'force-dynamic';
 // how those two already work.
 const MBA1_NOMINATIONS_CLOSE_AT = new Date('2026-09-23T00:00:00+05:30');
 
+// Voting closes at midnight IST, 25 Sep 2026 (the instant 24 Sep 2026 ends).
+// Same reasoning as the cutoff above — computed fresh per request inside the
+// handler below, never as a top-level const, for the same warm-instance
+// staleness reason. Mirrored in app/api/sr-elections/vote/route.ts, which is
+// the real enforcement. Once this passes, resultsReady (below) flips true —
+// Results starts actually querying sr_assignments instead of showing its
+// "not open yet" placeholder; it'll show its own normal empty state ("No SR
+// assignments recorded yet") until someone tallies the closed vote and
+// inserts the winners there, same as it always has.
+const MBA1_VOTING_CLOSE_AT = new Date('2026-09-25T00:00:00+05:30');
+
 function Shell({
   batchLabel,
   cohort,
@@ -119,14 +130,28 @@ export default async function SrElectionsPage() {
   // the same query returns exactly and only that cohort's roster.
   const TERM = student.cohort === 'MBA1' ? TERM_2 : TERM_5;
 
-  // Computed fresh on every request (see the comment on
-  // MBA1_NOMINATIONS_CLOSE_AT above for why this isn't module-level).
-  // Nominations and voting share one cutoff — voting starts the instant
-  // nominations close, no gap — so these are just the two sides of the
-  // same comparison.
-  const mba1NominationsOpen = new Date() < MBA1_NOMINATIONS_CLOSE_AT;
+  // Computed fresh on every request (see the comments on the two cutoffs
+  // above for why these aren't module-level). Three real states now, not
+  // two: nomination window, voting window, and closed-awaiting-results —
+  // each with its own message where relevant, since collapsing "voting
+  // hasn't started" and "voting has closed" into one boolean was exactly
+  // the wording bug already fixed once for nominations (see the comment on
+  // nominationsOpenForViewer's message below) and would have quietly
+  // recurred here the moment this second cutoff was added.
+  const now = new Date();
+  const mba1NominationsOpen = now < MBA1_NOMINATIONS_CLOSE_AT;
+  const mba1VotingOpen = now >= MBA1_NOMINATIONS_CLOSE_AT && now < MBA1_VOTING_CLOSE_AT;
+  const mba1VotingClosed = now >= MBA1_VOTING_CLOSE_AT;
+
   const nominationsOpenForViewer = student.cohort !== 'MBA1' || mba1NominationsOpen;
-  const votingOpenForViewer = student.cohort !== 'MBA1' || !mba1NominationsOpen;
+  const votingOpenForViewer = student.cohort !== 'MBA1' || mba1VotingOpen;
+  // Results was previously gated on votingOpenForViewer directly — that
+  // only ever worked because voting used to have no close transition, so
+  // "voting is open" and "results aren't ready" happened to always agree.
+  // Now that voting actually closes, those two questions are genuinely
+  // different, so Results gets its own condition: ready once voting has
+  // closed, not merely while voting happens to be open.
+  const resultsReady = student.cohort !== 'MBA1' || mba1VotingClosed;
 
   let nominationContent: ReactNode;
 
@@ -143,7 +168,10 @@ export default async function SrElectionsPage() {
   if (!nominationsOpenForViewer) {
     nominationContent = (
       <p className="text-sm text-inkFaint italic card p-5">
-        Nominations are closed. Voting is now open — head to the Voting tab.
+        Nominations are closed.{' '}
+        {mba1VotingOpen
+          ? 'Voting is now open — head to the Voting tab.'
+          : 'Voting has closed too — check the Results tab.'}
       </p>
     );
   } else {
@@ -225,7 +253,15 @@ export default async function SrElectionsPage() {
     </p>
   );
 
-  const votingContent = votingOpenForViewer ? <VotingForm term={TERM} /> : notOpenYet('Voting');
+  const votingContent = votingOpenForViewer
+    ? <VotingForm term={TERM} />
+    : mba1VotingClosed
+    ? (
+      <p className="text-sm text-inkFaint italic card p-5">
+        Voting closed. Results will be posted soon.
+      </p>
+    )
+    : notOpenYet('Voting');
 
   // Results: read from sr_assignments directly (not re-derived from votes) — this is
   // the exact table that grants real SR access site-wide, so the list shown here can
@@ -236,11 +272,14 @@ export default async function SrElectionsPage() {
   // would only ever see rows RLS allows for the logged-in student — isn't the right
   // tool here.
   //
-  // Skipped entirely while votingOpenForViewer is false — there can't be real
-  // results yet (assignments only exist once votes are tallied, which is after
-  // voting closes), so there's no reason to make this query at all until then.
+  // Skipped entirely while resultsReady is false — there can't be real
+  // results yet (assignments only exist once votes are tallied, which is
+  // after voting closes), so there's no reason to make this query at all
+  // until then. This used to check votingOpenForViewer, back when voting
+  // had no close transition of its own — see resultsReady's definition
+  // above for why that stopped being the right condition to use here.
   let resultsContent: ReactNode;
-  if (!votingOpenForViewer) {
+  if (!resultsReady) {
     resultsContent = notOpenYet('Results');
   } else {
     const admin = createAdminClient();

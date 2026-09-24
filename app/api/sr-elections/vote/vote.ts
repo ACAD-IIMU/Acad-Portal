@@ -27,16 +27,25 @@ export async function POST(req: Request) {
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
 
-  // Mirrors app/sr-elections/page.tsx's MBA1_NOMINATIONS_CLOSE_AT, same
-  // reasoning as nominate/route.ts's own mirror: the page-level gate only
-  // swaps out what renders under the Voting tab, it can't stop a direct
-  // POST here on its own — this check is the real enforcement. Computed
-  // fresh on every request; voting opens the instant nominations close, so
-  // this is just the other side of the same cutoff.
+  // Mirrors app/sr-elections/page.tsx's two cutoffs, same reasoning as
+  // nominate/route.ts's own mirror: the page-level gate only swaps out what
+  // renders under the Voting tab, it can't stop a direct POST here on its
+  // own — this check is the real enforcement. Computed fresh on every
+  // request. Now bounded on both sides (opens after nominations close,
+  // closes at its own cutoff) — it used to only check the open side, back
+  // when voting had no close transition, so "not open yet" was the only
+  // possible rejection reason; now that it can also be CLOSED, the message
+  // needs to say which one actually happened, same wording lesson as
+  // nominate/route.ts already learned once.
   const MBA1_NOMINATIONS_CLOSE_AT = new Date('2026-09-23T00:00:00+05:30');
-  const MBA1_VOTING_OPEN = new Date() >= MBA1_NOMINATIONS_CLOSE_AT;
+  const MBA1_VOTING_CLOSE_AT = new Date('2026-09-25T00:00:00+05:30');
+  const now = new Date();
+  const MBA1_VOTING_OPEN = now >= MBA1_NOMINATIONS_CLOSE_AT && now < MBA1_VOTING_CLOSE_AT;
   if (student.cohort === 'MBA1' && !MBA1_VOTING_OPEN) {
-    return NextResponse.json({ error: 'Voting is not open yet for your batch.' }, { status: 403 });
+    const message = now >= MBA1_VOTING_CLOSE_AT
+      ? 'Voting is closed for your batch.'
+      : 'Voting is not open yet for your batch.';
+    return NextResponse.json({ error: message }, { status: 403 });
   }
 
   let body: { term?: string; votes?: Vote[] };
