@@ -288,6 +288,36 @@ export default async function SrElectionsPage() {
       .select('subjects(name), sections(section_label), students(full_name, reg_no, email, phone)')
       .eq('term', TERM);
 
+    // Scope Results to the viewer's OWN section only — a student should see
+    // who's SR for every subject in their own section, not the whole
+    // cohort's roster across every section. Read via the regular (RLS-bound)
+    // `supabase` client, not `admin`, since this is the viewer's own
+    // enrollment data — same access pattern the Nomination tab's own
+    // enrollments query above already uses.
+    //
+    // Sections are per-subject (a fresh row per subject, even for the same
+    // label), so a student's "own section" isn't a single fixed id — it's
+    // whichever label their own enrollment rows share. Pulling it from one
+    // enrollment row is enough because every Term/TERM subject enrollment
+    // for a given student carries the same section_label by design (see
+    // mba1_term2_carryforward.sql's "same section carries over" — a student
+    // isn't split across different sections for different subjects in one
+    // term).
+    //
+    // If a student has no sectioned enrollment at all for this term (fully
+    // unsectioned subjects, or no enrollment data loaded yet), there's no
+    // section to scope by — fall back to showing everything rather than
+    // silently showing nothing.
+    const { data: viewerEnrollment } = await supabase
+      .from('enrollments')
+      .select('sections(section_label)')
+      .eq('student_id', student.id)
+      .eq('term', TERM)
+      .not('section_id', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    const viewerSectionLabel = (viewerEnrollment as any)?.sections?.section_label ?? null;
+
     const resultsRows = (srAssignments ?? [])
       .map((r: any) => ({
         subjectName: subjectDisplayName(r.subjects?.name, TERM) || '—',
@@ -297,6 +327,7 @@ export default async function SrElectionsPage() {
         email: r.students?.email ?? '—',
         phone: r.students?.phone ?? null
       }))
+      .filter((r) => viewerSectionLabel == null || r.sectionLabel === viewerSectionLabel)
       .sort((a, b) => a.subjectName.localeCompare(b.subjectName) || (a.sectionLabel ?? '').localeCompare(b.sectionLabel ?? ''));
 
     resultsContent = <Results rows={resultsRows} />;
