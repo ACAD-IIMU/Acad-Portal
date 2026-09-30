@@ -333,10 +333,23 @@ function applyKnownRoomOverride(subjectCode: string, sessionNumber: number, room
  * subject, so the quiz never became an event AND that day's real class (CPM's S4) silently
  * vanished from the calendar instead of just being logged as unmapped.
  * Split on blank lines FIRST, then '/' within each resulting piece, so a "/"-joined joint
- * class stacked with a quiz notice still splits correctly on both. */
+ * class stacked with a quiz notice still splits correctly on both.
+ *
+ * Also splits on a SINGLE newline, but only when the next line itself opens a new
+ * "{code} (section) - Sn" entry. The sheet doesn't always leave a blank line between a
+ * stacked notice and its class — Term V's 1 Oct Session 4 is
+ * "BAAI Quiz 1 \nfrom 2.20 pm\nSL - S6\n(CR-8B-18)", which collapsed into
+ * "BAAI Quiz 1 from 2.20 pm SL - S6 ..." and produced a bogus subject code
+ * "BAAIQUIZ1FROM220PMSL" — so SL's S6 disappeared from the calendar and the BAAI quiz
+ * never became an event (the exact failure described above, just without the blank
+ * line). Soft wraps are unaffected: a continuation line like "from 2.20 pm" or a room
+ * line like "(CR-8B-18)" doesn't start with "{code} - S{n}", so it's still joined. */
+const NEW_ENTRY_LINE_BREAK = /\n(?=\s*[A-Za-z][A-Za-z0-9&]*\s*(?:\([A-Z]\)\s*(?:&\s*\([A-Z]\)\s*)?)?-\s*S\d)/;
+
 function splitCellEntries(cellText: string): string[] {
   return cellText
     .split(/\n\s*\n/)
+    .flatMap((piece) => piece.split(NEW_ENTRY_LINE_BREAK))
     .flatMap((piece) => piece.split("/"))
     .map((s) => s.replace(/\s+/g, " ").trim())
     .filter((s) => s.length > 0);
