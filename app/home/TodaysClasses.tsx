@@ -94,10 +94,10 @@ export default function TodaysClasses({
   }
 
   return (
-    <div className="card p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="card p-4 sm:p-6">
+      <div className="flex items-center justify-between flex-wrap gap-x-3 gap-y-2 mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-base w-48 shrink-0">{headingFor(dayOffset)}</h2>
+          <h2 className="text-base sm:w-48 shrink-0">{headingFor(dayOffset)}</h2>
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => goToOffset(dayOffset - 1)}
@@ -121,7 +121,7 @@ export default function TodaysClasses({
             </button>
           </div>
         </div>
-        <span className="text-sm font-semibold text-gray-900">{label}</span>
+        <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">{label}</span>
       </div>
 
       {loading && <p className="text-sm text-inkFaint italic">Loading classes…</p>}
@@ -140,18 +140,24 @@ export default function TodaysClasses({
         !loadError &&
         sessions.map((s) => {
           return (
-            <div key={s.id} className="flex gap-4 py-3 border-b border-line last:border-0">
-              <div className="font-mono text-xs text-brand-700 w-32 shrink-0 pt-0.5 whitespace-nowrap">
+            <div key={s.id} className="flex flex-col sm:flex-row gap-1 sm:gap-4 py-3 border-b border-line last:border-0">
+              <div className="font-mono text-xs text-brand-700 sm:w-32 shrink-0 pt-0.5 whitespace-nowrap">
                 {formatTime12h(s.start_time)} – {formatTime12h(s.end_time)}
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <b>{s.subjects?.name}</b>
                 <span className="text-inkFaint text-xs ml-1.5">
                   {s.session_label ?? `S${s.session_number}`}
                 </span>
                 <div className="text-sm text-inkSoft">
-                  {s.faculty_name} · Room {s.room ?? 'TBD'}
-                  {s.sections?.section_label ? ` · Sec ${s.sections.section_label}` : ''}
+                  {/* joined, so a missing faculty name doesn't leave a leading " · " */}
+                  {[
+                    s.faculty_name,
+                    `Room ${s.room ?? 'TBD'}`,
+                    s.sections?.section_label ? `Sec ${s.sections.section_label}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </div>
                 <PrereadBadges noPreread={s.no_preread} prereads={s.prereads ?? []} />
               </div>

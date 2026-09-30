@@ -65,9 +65,9 @@ function Shell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar batchLabel={batchLabel} cohort={cohort} />
-      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-5 md:px-8 md:py-8">
         {userMenu && <div className="flex justify-end mb-5">{userMenu}</div>}
         {children}
       </main>

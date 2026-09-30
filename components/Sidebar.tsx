@@ -1,6 +1,10 @@
 // components/Sidebar.tsx
 //
-// Shared left nav. Self-determines the active item from the current URL
+// Shared left nav. NOTE: don't add `relative` to the <aside> — Tailwind outputs
+// .relative after .fixed, so it silently overrides `fixed` on mobile and the hidden
+// drawer goes back to reserving its full 250px width in the page flow (the blank
+// left column bug). `fixed` already anchors the absolutely-positioned collapse toggle.
+// Self-determines the active item from the current URL
 // (usePathname). Two behaviors:
 //   - Mobile (below md breakpoint): hamburger toggle + slide-in drawer + backdrop.
 //   - Desktop (md and up): collapsible — a toggle button shrinks it to an
@@ -118,16 +122,23 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
 
   return (
     <>
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setOpen(true)}
-        aria-label="Open menu"
-        className="md:hidden fixed top-4 left-4 z-50 w-9 h-9 rounded-lg border border-line bg-white shadow-sm flex items-center justify-center"
-      >
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
+      {/* Mobile top bar — sits in normal flow above the page content (every page
+          wrapper is flex-col below md, flex-row from md up), so nothing needs extra
+          top padding to clear it. Replaces the old free-floating hamburger, which
+          overlapped page headers and card content as the page scrolled. */}
+      <div className="md:hidden sticky top-0 z-30 flex items-center gap-3 h-14 px-4 bg-white/95 backdrop-blur border-b border-line">
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="Open menu"
+          className="w-9 h-9 -ml-1 rounded-lg flex items-center justify-center text-brand-950 hover:bg-brand-50"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <Image src="/acad-logo.png" alt="ACAD" width={28} height={28} className="rounded-md" />
+        <span className="text-sm font-semibold text-brand-950">ACAD Portal</span>
+      </div>
 
       {/* Backdrop, mobile only */}
       {open && (
@@ -136,9 +147,9 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
 
       <aside
         className={`
-          relative bg-gradient-to-b from-brand-950 to-brand-900 text-brand-50 flex flex-col
+          bg-gradient-to-b from-brand-950 to-brand-900 text-brand-50 flex flex-col
           p-5 w-[250px] ${railWidth} flex-shrink-0
-          fixed top-0 left-0 h-screen z-50 transition-all duration-200
+          fixed top-0 left-0 h-[100dvh] md:h-screen overflow-y-auto z-50 transition-all duration-200
           md:sticky md:translate-x-0
           ${open ? 'translate-x-0' : '-translate-x-full'}
         `}

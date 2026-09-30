@@ -55,18 +55,19 @@ export default function UserMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2.5 rounded-full border border-line bg-white pl-1.5 pr-3 py-1.5 hover:border-brand-700 transition"
+        aria-label={name}
+        className="flex items-center gap-2.5 rounded-full border border-line bg-white p-1 sm:pl-1.5 sm:pr-3 sm:py-1.5 hover:border-brand-700 transition"
       >
         <span className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-700 text-white text-xs font-semibold shrink-0">
           {initialsOf(name)}
         </span>
-        <span className="text-sm font-semibold text-brand-950 leading-tight">{name}</span>
+        <span className="hidden sm:inline text-sm font-semibold text-brand-950 leading-tight">{name}</span>
         <svg
           width="14"
           height="14"
           viewBox="0 0 20 20"
           fill="none"
-          className={`text-inkFaint transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`hidden sm:block text-inkFaint transition-transform ${open ? 'rotate-180' : ''}`}
         >
           <path d="M5 7.5l5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -75,7 +76,7 @@ export default function UserMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-2 w-56 card p-1.5 z-20"
+          className="absolute right-0 mt-2 w-60 max-w-[calc(100vw-2rem)] card p-1.5 z-20"
         >
           <div className="px-3 py-2.5 border-b border-line mb-1">
             <p className="text-sm font-semibold text-brand-950">{name}</p>

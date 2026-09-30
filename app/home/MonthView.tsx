@@ -156,7 +156,7 @@ export default function MonthView({
   );
 
   return (
-    <div className="card p-6">
+    <div className="card p-4 sm:p-6">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
         <div className="flex items-center gap-3.5">
           <h2 className="text-base">
@@ -210,7 +210,7 @@ export default function MonthView({
             <div
               key={i}
               onClick={() => events.length && setOpenDay(c.dateKey)}
-              className={`bg-white min-h-[118px] p-1.5 relative ${c.faint ? 'opacity-40 bg-[#fbf6f5]' : ''} ${
+              className={`bg-white min-h-[64px] sm:min-h-[118px] p-1 sm:p-1.5 relative ${c.faint ? 'opacity-40 bg-[#fbf6f5]' : ''} ${
                 events.length ? 'cursor-pointer hover:bg-brand-50' : ''
               }`}
             >
@@ -221,6 +221,21 @@ export default function MonthView({
               >
                 {c.day}
               </span>
+              {/* Phones: one colour dot per item (a ~45px-wide cell can't fit a
+                  readable chip — they all truncated to "1…"). Tap opens DayOverlay. */}
+              {events.length > 0 && (
+                <div className="sm:hidden mt-1 flex flex-wrap gap-[3px]">
+                  {events.slice(0, 6).map((e, idx) => (
+                    <i
+                      key={idx}
+                      className={`w-[7px] h-[7px] rounded-full inline-block ${e.flag ? 'border-[1.5px] border-gold-500 bg-white' : ''}`}
+                      style={e.flag ? undefined : { background: colorForSubject(e.label, uniqueSubjects) }}
+                    />
+                  ))}
+                  {events.length > 6 && <span className="text-[9px] leading-[7px] text-inkFaint">+</span>}
+                </div>
+              )}
+              <div className="hidden sm:block">
               {events.slice(0, 3).map((e, idx) =>
                 e.flag ? (
                   <div key={idx} className="text-[10.5px] mt-0.5 px-1.5 py-0.5 rounded bg-white border border-gold-500 text-gold-600 font-semibold truncate">
@@ -241,6 +256,7 @@ export default function MonthView({
               {events.length > 3 && (
                 <div className="text-[10.5px] text-inkFaint px-1.5">+{events.length - 3} more</div>
               )}
+              </div>
             </div>
           );
         })}
@@ -277,7 +293,7 @@ function DayOverlay({
   });
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div className="bg-white rounded-card p-6 w-full max-w-sm max-h-[80vh] overflow-y-auto">
+      <div className="bg-white rounded-card p-5 sm:p-6 w-full max-w-sm max-h-[80vh] overflow-y-auto">
         <h3 className="text-lg mb-1">{label}</h3>
         <p className="text-xs text-inkFaint mb-4">{events.length} item{events.length !== 1 ? 's' : ''}</p>
         <div className="flex flex-col gap-2">
@@ -288,7 +304,7 @@ function DayOverlay({
                 <span>{e.label}</span>
               </div>
             ) : (
-              <div key={i} className="flex items-center gap-2.5 border border-line rounded-lg px-3 py-2 text-sm">
+              <div key={i} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 border border-line rounded-lg px-3 py-2 text-sm">
                 <span
                   className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
                   style={{ background: colorForSubject(e.label, subjectColors) }}

@@ -145,19 +145,19 @@ export default async function HomePage() {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar batchLabel={student?.batch_label} cohort={student?.cohort} />
-      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8 flex flex-col gap-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl">Welcome, {student?.full_name?.split(' ')[0] ?? 'there'}</h1>
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-5 md:px-8 md:py-8 flex flex-col gap-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl">Welcome, {student?.full_name?.split(' ')[0] ?? 'there'}</h1>
           <p className="text-inkFaint text-sm">Here&apos;s what&apos;s on today.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {isSr && (
             <a
               href="/sr"
-              className="flex items-center gap-1.5 text-sm font-bold text-white bg-gold-600 rounded-full px-4 py-2 shadow-sm hover:bg-gold-500 transition"
+              className="flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-white bg-gold-600 rounded-full px-3 sm:px-4 py-2 shadow-sm hover:bg-gold-500 transition"
             >
               📄 SR Tools
             </a>

@@ -43,9 +43,9 @@ export default async function PlannerPage() {
   if (student?.cohort === 'MBA1' || student?.cohort === 'MBA2') {
     const isMba1 = student?.cohort === 'MBA1';
     return (
-      <div className="flex min-h-screen">
+      <div className="flex flex-col md:flex-row min-h-screen">
         <Sidebar batchLabel={student.batch_label} cohort={student.cohort} />
-        <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8 flex flex-col gap-5">
+        <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-5 md:px-8 md:py-8 flex flex-col gap-5">
           <header className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl">Term Planner</h1>
@@ -71,9 +71,9 @@ export default async function PlannerPage() {
   const notGenerated = data.timetable.length === 0;
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar batchLabel={student?.batch_label} cohort={student?.cohort} />
-      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:px-8 flex flex-col gap-5">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-5 md:px-8 md:py-8 flex flex-col gap-5">
         <header className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl">{data.term} Planner</h1>
