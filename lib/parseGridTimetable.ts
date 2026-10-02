@@ -548,11 +548,33 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
         // MBA1's sheet was confirmed to have no rich-text runs at all (see file
         // header) -- a mixed-run cell isn't expected here, but if one ever appears,
         // fall back to the raw text rather than silently dropping the cell.
-        const cellText = rawCellText.replace(/\s+/g, " ").trim();
+        //
+        // A cell occasionally combines a REAL numbered class session with separate
+        // event text on a later line -- confirmed directly: Term II's WAC-6 class
+        // coincides, for one section only, with the SM-7 Guest Session announcement,
+        // both written into the same cell ("WAC-6\nSM-7 Guest Session 6:30 - 8:00 PM
+        // (Auditorium)"). Treating the whole cell as one blob either silently drops
+        // the real WAC-6 class (it never gets created as a session at all) or garbles
+        // the event's label into something like "WAC-6 SM-7 Guest Session" -- which
+        // also breaks de-duplication against the SAME event's plain "SM-7 Guest
+        // Session" text in every other section's cell, producing two separate
+        // calendar entries for one real event. Peel off a first line that is ITSELF
+        // a clean numbered session before falling through to the single-cellText
+        // checks below, so the class and the event get handled independently.
+        // Scoped to NUMBERED_RE only (not COHORT_RE/BARE_CODE_RE) -- the only
+        // multi-line combo actually observed in real data so far.
+        const rawLines = rawCellText.split(/\r?\n/).map((l: string) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+        let cellText = rawCellText.replace(/\s+/g, " ").trim();
+        let extraEventText: string | null = null;
+        if (rawLines.length > 1 && NUMBERED_RE.test(rawLines[0])) {
+          cellText = rawLines[0];
+          extraEventText = rawLines.slice(1).join(" ");
+        }
 
         if (NO_CLASS_MARKERS.has(cellText)) continue;
 
         const slot = group.slotTimes[colIndexInGroup];
+        let matchedSession = false;
 
         const cohortMatch = cellText.match(COHORT_RE);
         if (cohortMatch) {
@@ -571,42 +593,63 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
             endTime: slot.endTime,
             sessionLabel: `${rawCode.trim()} Cohort ${cohortNum}, Session ${sheetSessionNum}${labMarker ? " (LAB)" : ""}`,
           });
-          continue;
+          matchedSession = true;
         }
 
-        const numberedMatch = cellText.match(NUMBERED_RE);
-        if (numberedMatch) {
-          const [, rawCode, sessionNumStr] = numberedMatch;
-          sessions.push({
-            subjectCode: normalizeCode(rawCode),
-            rawCode: rawCode.trim(),
-            sectionLabel: group.label,
-            sessionNumber: parseInt(sessionNumStr, 10),
-            room: group.room,
-            sessionDate,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            sessionLabel: null,
-          });
-          continue;
+        if (!matchedSession) {
+          const numberedMatch = cellText.match(NUMBERED_RE);
+          if (numberedMatch) {
+            const [, rawCode, sessionNumStr] = numberedMatch;
+            sessions.push({
+              subjectCode: normalizeCode(rawCode),
+              rawCode: rawCode.trim(),
+              sectionLabel: group.label,
+              sessionNumber: parseInt(sessionNumStr, 10),
+              room: group.room,
+              sessionDate,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+              sessionLabel: null,
+            });
+            matchedSession = true;
+          }
         }
 
-        const bareMatch = cellText.match(BARE_CODE_RE);
-        if (bareMatch && UNNUMBERED_SUBJECT_CODES.has(normalizeCode(bareMatch[1]))) {
-          const [, rawCode, labMarker] = bareMatch;
-          sessions.push({
-            subjectCode: normalizeCode(rawCode),
-            rawCode: rawCode.trim(),
-            sectionLabel: group.label,
-            sessionNumber: unnumberedSessionNumber(sessionDate, group.label, colIndexInGroup),
-            room: group.room,
-            sessionDate,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            sessionLabel: labMarker ? `${rawCode.trim()} - LAB` : rawCode.trim(),
-          });
-          continue;
+        if (!matchedSession) {
+          const bareMatch = cellText.match(BARE_CODE_RE);
+          if (bareMatch && UNNUMBERED_SUBJECT_CODES.has(normalizeCode(bareMatch[1]))) {
+            const [, rawCode, labMarker] = bareMatch;
+            sessions.push({
+              subjectCode: normalizeCode(rawCode),
+              rawCode: rawCode.trim(),
+              sectionLabel: group.label,
+              sessionNumber: unnumberedSessionNumber(sessionDate, group.label, colIndexInGroup),
+              room: group.room,
+              sessionDate,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+              sessionLabel: labMarker ? `${rawCode.trim()} - LAB` : rawCode.trim(),
+            });
+            matchedSession = true;
+          }
         }
+
+        // The peeled-off remainder (see extraEventText above) always gets routed to
+        // `unmapped` on its own -- independent of whether the first line matched a
+        // session -- so it reaches the event classifier with its OWN clean text
+        // ("SM-7 Guest Session 6:30 - 8:00 PM (Auditorium)"), identical to every
+        // other section's plain cell, so it de-dupes into the same single event
+        // instead of a second, differently-worded one.
+        if (extraEventText) {
+          unmapped.push({
+            sessionDate,
+            slotLabel,
+            rawText: extraEventText,
+            reason: "Remainder of a multi-line cell after its first line was read as a class session — routed through the event classifier.",
+          });
+        }
+
+        if (matchedSession) continue;
 
         // Anything else -- Quiz/Tutorial/Briefing/Master Class/holiday/administrative
         // text -- isn't a class at all. Routed to `unmapped`, same as MBA2's parser;
@@ -616,6 +659,12 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
         // "Briefing Session", "Master Class", "Paper Showing" -- none of these are in
         // parseEvents.ts's keyword lists yet) stays visible in the sync's own
         // `unmapped` response for manual review, not silently lost.
+        //
+        // Only reachable when extraEventText is null (matchedSession is always true
+        // whenever a split happened -- see above), so rawCellText and cellText cover
+        // the same content here; rawCellText is used to keep this unmapped entry's
+        // raw newlines intact for the sync response's own debug/review output,
+        // unchanged from this function's original behavior.
         unmapped.push({
           sessionDate,
           slotLabel,

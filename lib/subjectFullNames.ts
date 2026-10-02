@@ -48,7 +48,13 @@ const FULL_NAMES: Record<string, Record<string, string>> = {
     OM: 'Operations Management',
     OR: 'Operations Research',
     MBD: 'Macroeconomics for Business Decisions',
-    'WAC-II': 'Written Analysis for Communication-II'
+    // Key is 'WAC', not 'WAC-II' — confirmed directly against the Term-II
+    // timetable sheet's own session cells, which write the bare code "WAC"
+    // (no "-II" suffix), unlike Term I's sheet which does write "WAC-I".
+    // subjects.name for this row was corrected to match (see the Supabase
+    // migration run alongside this edit) — keeping this file's key out of
+    // sync with that rename would silently stop showing the full title again.
+    WAC: 'Written Analysis for Communication-II'
   }
 };
 
