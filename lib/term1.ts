@@ -1,11 +1,12 @@
-// This is MBA1's (batch 2026-28) current term — sibling to lib/term5.ts (MBA2's
-// current term). See that file for why this is split by cohort instead of one
-// generic CURRENT_TERM constant.
-//
-// MBA1 is on Term I now, moving to Term II next — per the source timetable's own
-// title ("MBA 2026-28, Term-I timetable, 22nd June - 26th September, 2026") and
-// confirmed directly, not assumed. Update the line below when that happens, same as
-// TERM_5 gets updated for MBA2 each time it advances.
+// MBA1's (batch 2026-28) Term I — now a PAST term, not current. Term I ran
+// 22 June - 26 September 2026 per the source timetable's own title; MBA1 has since
+// rolled over to Term II. sync-timetable, app/home/page.tsx, and
+// lib/googleCalendar.ts all switched to importing lib/term2.ts's TERM_2 instead of
+// this file as part of that rollover — nothing in the app reads TERM_1 anymore.
+// Kept around (not deleted) as a record of the term string and its dates, same
+// reason completed terms generally aren't scrubbed from this codebase's comments.
+// If this needs reviving as "the current term" meaning changes again, don't reuse
+// it blindly — re-check which term is actually live first.
 //
 // term5.ts's comment (written before anyone had actually looked at MBA1's real
 // sheet) lists 3 gaps blocking MBA1. Status, now that the sheet has actually been

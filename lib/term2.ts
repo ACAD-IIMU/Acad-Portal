@@ -18,23 +18,28 @@
 // needs it too and a second caller shouldn't have to redefine the EAP file's
 // inline logic.
 //
-// IMPORTANT — this file does NOT mean MBA1's calendar, timetable sync, or Home
-// page should switch to Term II yet. Term I is still the live, current term
-// through 26 Sep 2026 — sync-timetable, app/home/page.tsx, and
-// lib/googleCalendar.ts all correctly keep reading lib/term1.ts's TERM_1 for
-// that. Only app/sr-elections/page.tsx reads TERM_2, and only for MBA1 —
-// intentionally, since it's electing for the term ahead, not showing the term
-// happening now.
+// UPDATE — Term I ended 26 Sep 2026 and MBA1's live calendar/timetable data has
+// rolled over to Term II. sync-timetable (app/api/sync-timetable/route.ts),
+// app/home/page.tsx, and lib/googleCalendar.ts now all import TERM_2 from here
+// instead of lib/term1.ts's TERM_1 — so this file has quietly become MBA1's
+// CURRENT term, not just the "next term" it started out as. app/sr-elections/
+// page.tsx also still imports TERM_2, for a different, now-historical reason:
+// it ran the Term II SR election while Term II was still ahead of MBA1. That
+// election has since closed and sr_assignments is populated, so SR Elections'
+// read of TERM_2 and the Home/sync-timetable/googleCalendar reads of TERM_2
+// now coincide (both mean "Term II") rather than deliberately differing the
+// way TERM_2-vs-TERM_1 used to.
 //
-// Known gap as of adding this file: subjects/sections/enrollments for
-// MBA1/Term II do not exist in Supabase yet (Term I's own data was only
-// recently populated, and Term II can't be seeded with real section/enrollment
-// data until ACAD finalizes it for the new term). Until then, SR Elections'
-// Nomination tab will show its "no enrollments yet" empty state for MBA1
-// students — same gap Term I itself had before it was populated, now shifted
-// one term forward. Also: voteTableForTerm('Term II') resolves to the physical
-// table `sr_votes_term_ii` — that table does not exist in Supabase yet either
-// and needs to be created (mirroring sr_votes_term_v) before MBA1's voting
-// phase opens, same as Term I's own gaps had to be closed one by one before
-// its data went live.
+// Known gap, carried over from before this file's meaning shifted:
+// subjects/sections/enrollments for MBA1/Term II are now seeded in Supabase
+// (derived from Term I's own enrollment rows), and sr_votes_term_ii was created
+// manually, mirroring sr_votes_term_v — both already done for this cycle, but
+// noted here since the vote table is an ad-hoc DB object this repo's
+// migrations don't track.
+//
+// NEXT transition, not yet started: once MBA1 needs to elect Term III's SRs
+// (ahead of Term II actually ending), create lib/term3.ts the same way this
+// file was created from lib/term1.ts, and point app/sr-elections/page.tsx at
+// TERM_3 instead of TERM_2 — at which point TERM_2 here goes back to meaning
+// only "MBA1's current term" with no election-related reader left.
 export const TERM_2 = 'Term II';

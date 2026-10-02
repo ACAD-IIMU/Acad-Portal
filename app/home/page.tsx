@@ -5,7 +5,7 @@ import Reminders from './Reminders';
 import QuickLinks from './QuickLinks';
 import MonthView from './MonthView';
 import { TERM_5 } from '@/lib/term5';
-import { TERM_1 } from '@/lib/term1';
+import { TERM_2 } from '@/lib/term2';
 
 // This page is per-student personalized (enrollments, own sessions, own events) — it must
 // never be statically cached or served stale to a different logged-in user.
@@ -13,14 +13,19 @@ export const dynamic = 'force-dynamic';
 import UserMenu from '@/components/UserMenu';
 
 // Fallback only — used if no sessions are VISIBLE yet for this student's term (either
-// the sync genuinely hasn't run, or — the real cause right now for any MBA1 student —
-// the "students see sessions they're enrolled in" RLS policy hides every row because
-// `enrollments` for MBA1 doesn't exist yet). Split per cohort so an MBA1 student at
-// least sees their own real term window (from the source sheet's own title: "22nd
-// June - 26th September, 2026") while enrollments are still pending, instead of
-// silently inheriting MBA2's old placeholder dates.
+// the sync genuinely hasn't run, or the "students see sessions they're enrolled in"
+// RLS policy hides every row because `enrollments` doesn't exist yet for that term).
+// Split per cohort so a student at least sees their own real term window while
+// sessions are still pending, instead of silently inheriting the other cohort's dates.
+//
+// MBA1's row is now Term II's window, per the "Term-II" tab's own title in the
+// MBA 2026-28 Batch Timetable sheet: "MBA 2026-28, Term-II timetable, 11th
+// October – 3rd January, 2026". Read as 11 Oct 2026 – 3 Jan 2027 (the single
+// "2026" in that title applies to the start date only, same convention as a
+// title normally drops a repeated year) — a term can't end before it starts, so
+// 3 Jan 2026 isn't a valid reading. If that's wrong, this is the one line to fix.
 const FALLBACK_TERM_RANGES: Record<'MBA1' | 'MBA2', { start: string; end: string }> = {
-  MBA1: { start: '2026-06-22', end: '2026-09-26' },
+  MBA1: { start: '2026-10-11', end: '2027-01-03' },
   MBA2: { start: '2026-06-07', end: '2026-08-28' },
 };
 
@@ -37,7 +42,7 @@ export default async function HomePage() {
   // batches exist, not just today's two. Defaults to TERM_5/MBA2 behavior for anyone not
   // explicitly MBA1, matching this app's only other cohort ever until now.
   const isMba1 = student?.cohort === 'MBA1';
-  const studentTerm = isMba1 ? TERM_1 : TERM_5;
+  const studentTerm = isMba1 ? TERM_2 : TERM_5;
   const studentBatchLabel = student?.batch_label;
 
   const { count: srCount } = await supabase

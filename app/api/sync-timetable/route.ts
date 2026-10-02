@@ -5,7 +5,7 @@ import { parseTimetableWorkbook, normalizeCode, ParsedSession, UnmappedEntry } f
 import { parseGridTimetableWorkbook, EndTermExamEntry } from "@/lib/parseGridTimetable";
 import { extractEventsFromUnmapped } from "@/lib/parseEvents";
 import { TERM_5 } from "@/lib/term5";
-import { TERM_1 } from "@/lib/term1";
+import { TERM_2 } from "@/lib/term2";
 
 // Protects this endpoint from being hit by anyone but Vercel Cron / you manually.
 // Vercel Cron sends this header automatically; for manual testing, pass ?secret=... instead.
@@ -29,16 +29,15 @@ function isAuthorized(req: Request): boolean {
 // application/vnd.google-apps.spreadsheet), not an uploaded .xlsx like mba2's file,
 // hence isNativeSheet + the files.export branch below instead of files.get.
 //
-// IMPORTANT, not yet resolved by this file (flagging rather than pretending
-// otherwise): calling this route with ?batch=mba1 will run without error but
-// currently resolve ZERO sessions, because `subjects`/`sections` rows for MBA1/
-// Term I don't exist in the DB yet -- nothing has populated them. This route only
-// ever *queries* those tables (see step 3 below), matching MBA2's own existing
-// contract ("via the tables already populated from the enrollment import" -- a
-// separate, not-yet-built process for MBA1). Safe to deploy and test now regardless:
-// with nothing resolved, every session falls into `unresolvedSubjectCodes` in the
-// response instead of silently going missing, which is exactly the signal needed to
-// confirm subjects/sections are the next real gap, not a crash or bad data.
+// UPDATE: mba1 now targets TERM_2 ('Term II') instead of TERM_1 -- Term I ended
+// 26 Sep 2026 and MBA1's live term has rolled over, per the transition this config
+// was always going to need (see lib/term2.ts's header comment). Term II's
+// `subjects`/`sections` rows already exist in the DB (seeded + enrollments derived
+// from Term I's own enrollment rows), so this route should resolve real sessions
+// against them now, not fall into `unresolvedSubjectCodes` the way the original
+// Term I run did on its first-ever call. If a sync run's response still shows a
+// large unresolvedSubjectCodes list, that's the signal something in that seeding
+// is actually missing or mismatched -- check it there, not here.
 interface ParseResult {
   sessions: ParsedSession[];
   unmapped: UnmappedEntry[];
@@ -67,8 +66,15 @@ const BATCH_CONFIGS: Record<
     parse: parseTimetableWorkbook,
   },
   mba1: {
+    // Same workbook as before -- it has always had both a "Term-I" and a "Term-II"
+    // tab (confirmed via wb.SheetNames when the Term-I parser was first built).
+    // parseGridTimetableWorkbook matches its target sheet by normalizing `term`
+    // against every tab name (see lib/parseGridTimetable.ts's
+    // normalizeSheetName/matchedSheetName logic), so switching this to TERM_2 is
+    // enough on its own to make this route read the "Term-II" tab instead --
+    // no parser change needed, and nothing here needs a new fileId.
     fileId: "1U-SwYxSrFhmrfggRaVtp-v3zmnH1cKAATvjzHskArps", // MBA 2026-28 Batch Timetable (native Google Sheet)
-    term: TERM_1,
+    term: TERM_2,
     batchLabel: "MBA 2026-28",
     isNativeSheet: true,
     parse: parseGridTimetableWorkbook,

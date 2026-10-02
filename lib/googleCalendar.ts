@@ -1,7 +1,7 @@
 import { google, calendar_v3 } from 'googleapis';
 import { createAdminClient } from '@/lib/supabase/server';
 import { TERM_5 } from '@/lib/term5';
-import { TERM_1 } from '@/lib/term1';
+import { TERM_2 } from '@/lib/term2';
 
 type SessionToPush = {
   id: string;
@@ -218,7 +218,7 @@ export async function pushScheduleToCalendar(studentId: string): Promise<PushRes
     .eq('id', studentId)
     .maybeSingle();
   const isMba1 = studentRow?.cohort === 'MBA1';
-  const term = isMba1 ? TERM_1 : TERM_5;
+  const term = isMba1 ? TERM_2 : TERM_5;
   const batchLabel = studentRow?.batch_label;
 
   const { data: tokenRow } = await admin
