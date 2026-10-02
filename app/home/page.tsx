@@ -82,8 +82,33 @@ export default async function HomePage() {
     .limit(1)
     .maybeSingle();
 
-  const TERM_START = earliestSession?.session_date ?? FALLBACK_TERM_RANGES[isMba1 ? 'MBA1' : 'MBA2'].start;
-  const TERM_END = latestSession?.session_date ?? FALLBACK_TERM_RANGES[isMba1 ? 'MBA1' : 'MBA2'].end;
+  // Fetched BEFORE the term window is computed, because the window has to span these too
+  // — see below. (Also reused further down for MonthView, so this isn't an extra query.)
+  const { data: allTermEvents } = await supabase
+    .from('important_events')
+    .select('*, subjects(name)')
+    .eq('term', studentTerm)
+    .eq('batch_label', studentBatchLabel)
+    .order('event_date');
+
+  // The term window spans sessions AND events, not sessions alone. End-term exams are
+  // important_events, not sessions — Term II's run into January while the last actual
+  // CLASS is in December, so a sessions-only window ended the calendar at 31 Dec and the
+  // exams simply had no month to be drawn in. Same reasoning at the start of the term
+  // (a Registration day can precede the first class), so both ends take the wider value.
+  const eventDates = (allTermEvents ?? []).map((e) => e.event_date as string).filter(Boolean);
+  const firstEventDate = eventDates.length > 0 ? eventDates[0] : null; // query is ordered by event_date
+  const lastEventDate = eventDates.length > 0 ? eventDates[eventDates.length - 1] : null;
+
+  const minDate = (a: string | null, b: string | null) => (a && b ? (a < b ? a : b) : a ?? b);
+  const maxDate = (a: string | null, b: string | null) => (a && b ? (a > b ? a : b) : a ?? b);
+
+  const TERM_START =
+    minDate(earliestSession?.session_date ?? null, firstEventDate) ??
+    FALLBACK_TERM_RANGES[isMba1 ? 'MBA1' : 'MBA2'].start;
+  const TERM_END =
+    maxDate(latestSession?.session_date ?? null, lastEventDate) ??
+    FALLBACK_TERM_RANGES[isMba1 ? 'MBA1' : 'MBA2'].end;
 
   const { data: todaysSessions } = await supabase
     .from('sessions')
@@ -107,12 +132,7 @@ export default async function HomePage() {
     .gte('event_date', today)
     .order('event_date');
 
-  const { data: allTermEvents } = await supabase
-    .from('important_events')
-    .select('*, subjects(name)')
-    .eq('term', studentTerm)
-    .eq('batch_label', studentBatchLabel)
-    .order('event_date');
+  // (allTermEvents is fetched further up — the term window depends on it.)
 
   // New: personal reminders (this student's own) and SR class announcements (anything
   // an SR has posted for a subject+section this student is enrolled in — RLS does the
