@@ -174,23 +174,70 @@ const COHORT_RE =
 // Term-II uses a hyphen -- both need to match without treating "-" as part of the code).
 const NUMBERED_RE = /^([A-Za-z][A-Za-z]*)\s*-?\s*(\d+)\s*$/;
 
-// End-Term exam week (confirmed directly: MBA1's Term I, roughly Sept 21-27) labels
-// each exam day with the subject's FULL course title instead of any code or keyword
-// at all -- e.g. "Financial Reporting and Analysis" sitting alone in Section A's
-// first column, with every other section's column blank that day (it isn't really
-// Section-A-specific, it's a whole-day note that happens to be written in that cell).
-// Confirmed against the legend table embedded in this same sheet (rows 111-129).
+// Exam-week rows (confirmed directly: MBA1's Term I, roughly Sept 21-27, AND Term II's
+// two separate blocks -- Midterm week, 16-21 Nov 2026, and Endterm week, 28 Dec 2026 - 3
+// Jan 2027) label each exam day with the subject's FULL course title instead of any code
+// or keyword at all -- e.g. "Financial Reporting and Analysis" / "Strategic Management"
+// sitting alone in Section A's first column, with every other section's column blank
+// that day (it isn't really Section-A-specific, it's a whole-day note that happens to be
+// written in that cell). Confirmed against the legend table embedded in this same sheet
+// (rows 111-129 for Term I; Term II has its own equivalent legend).
 // Hardcoded here rather than re-parsed from the legend at runtime -- a real option,
 // just more code than this one narrow, confirmed case justifies right now. If a
 // future term's legend renames a course, this map needs a matching manual update.
+//
+// Term I only ever ran ONE exam block (always "End Term", never "Mid Term" -- there was
+// no separate midterm week that term), so its 6 codes never needed to distinguish the
+// two. Term II runs TWO blocks in the same term -- a Midterm week and, later, an Endterm
+// week -- reusing some of the same subject codes in both (e.g. 'strategic management'
+// means Strategic Management's MIDTERM in the Nov block and its ENDTERM in the Dec/Jan
+// block: same subject, two different exams, two different dates). That's fine for this
+// map, which only resolves title -> code; which exam TYPE a given day is gets decided
+// separately below (examDayType), not by having two different map entries for the same
+// title.
 const EXAM_WEEK_FULL_TITLE_TO_CODE: Record<string, string> = {
+  // Term I
   'financial reporting and analysis': 'FRA',
   'statistics for management': 'SM',
   'business ethics': 'BE',
   'individual and group dynamics': 'IGD',
   'microeconomics for managers': 'MEM',
   'marketing management': 'MM',
+  // Term II -- confirmed directly against both the Midterm-week and Endterm-week blocks
+  // of the Term-II tab (screenshots reviewed, not guessed). WAC never appears bare in
+  // either block (it's assessed through its own numbered sessions, not a sit-down exam),
+  // so it deliberately has no entry here.
+  'introduction to corporate finance': 'ICF',
+  'strategic management': 'SM',
+  'indian social and political environment': 'ISPE',
+  'business law': 'BL',
+  'introduction to digital technologies': 'IDT',
+  'organizational dynamics': 'OD',
+  'operations management': 'OM',
+  'operations research': 'OR',
+  'macroeconomics for business decisions': 'MBD',
 };
+
+// A day's own cell can carry an explicit "(End Term)" or "(Mid Term)" suffix --
+// confirmed directly: Term II's Midterm week has two days like this ("Operations
+// Research (End Term)", "Indian Social and Political Environment (End Term)") where
+// that subject's ONLY exam happens to fall inside what's otherwise Midterm week for
+// everyone else. Stripped before the title lookup above (its keys are bare titles);
+// when present, it overrides examBlockType below for that one day only.
+const EXAM_DAY_SUFFIX_RE = /\s*\(\s*(end|mid)\s*term\s*\)\s*$/i;
+
+// The banner stating which kind of exam week this block is -- "Midterm Examination,
+// 10:00 AM Onwards" (Term II) / "End-term Examination, 10 AM Onwards" (Term I) --
+// confirmed directly to sit in a cell MERGED across every row of that week's block, so
+// only the block's first row actually carries this text; every other row reads blank
+// for that column, same as any other merged-cell continuation (see the time-scan loop
+// below, which already handles exactly this). Matched loosely (hyphen/space-insensitive)
+// since Term I's real text uses a hyphen ("End-term") and Term II's doesn't ("Endterm").
+const EXAM_WEEK_TYPE_RE = /(mid|end)[\s-]*term[\s-]*examination/i;
+
+function examLabelType(word: string): 'Mid-Term' | 'End-Term' {
+  return word.toLowerCase() === 'mid' ? 'Mid-Term' : 'End-Term';
+}
 
 export interface EndTermExamEntry {
   subjectCode: string | null; // null for Capstone -- it isn't one of the 9 taught subjects
@@ -349,6 +396,20 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
   // different from the one true end-of-grid row, which is blank across EVERY column.
   let lastSessionDate: string | null = null;
 
+  // Carries which exam block ("mid" or "end") is currently in effect across exam-week
+  // rows -- same carry-forward idea as lastSessionDate above, needed for the same
+  // reason: the banner that actually states "Midterm Examination..." vs "Endterm
+  // Examination..." lives in a cell merged across the WHOLE block, so only that
+  // block's first row reads it back non-blank (see EXAM_WEEK_TYPE_RE's own comment).
+  // Every later row in the same block has to remember it instead of re-finding it.
+  let examBlockType: 'mid' | 'end' | null = null;
+
+  // Same carry-forward, for the SAME reason, applied to the stated time -- "10:00 AM
+  // Onwards" sits in that same block-wide merged cell, so it genuinely applies to
+  // every day in the block, not just the first. Per request: every exam day in a
+  // block now shows this carried time, not just the row that happens to state it.
+  let examBlockTime: string | null = null;
+
   for (let row = dataStartRow; row <= range.e.r; row++) {
     if (isRowCompletelyBlank(ws, row, range.e.c)) break; // the real end of the date grid
 
@@ -402,7 +463,12 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
     const firstCellAddr = XLSX.utils.encode_cell({ r: row, c: groups[0].startCol });
     const firstCellRaw = ws[firstCellAddr]?.v;
     const firstCellText = firstCellRaw ? firstCellRaw.toString().replace(/\s+/g, ' ').trim() : '';
-    const firstCellLower = firstCellText.toLowerCase();
+    // Strip a per-day "(End Term)"/"(Mid Term)" override (see EXAM_DAY_SUFFIX_RE) before
+    // the title lookup -- the map's keys are bare titles, and this suffix is itself the
+    // signal for daySuffixType below, not part of the subject's name.
+    const daySuffixMatch = firstCellText.match(EXAM_DAY_SUFFIX_RE);
+    const daySuffixType: 'mid' | 'end' | null = daySuffixMatch ? (daySuffixMatch[1].toLowerCase() as 'mid' | 'end') : null;
+    const firstCellLower = firstCellText.replace(EXAM_DAY_SUFFIX_RE, '').trim().toLowerCase();
     const examCode = EXAM_WEEK_FULL_TITLE_TO_CODE[firstCellLower];
     const isCapstone = firstCellLower.startsWith('capstone');
 
@@ -410,21 +476,51 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
       // A time mention can appear either in this same cell (Capstone: "Capstone Exam
       // (1:30 PM onwards)") or elsewhere in the row (Sept 21's separate "End-term
       // Examination, 10 AM Onwards" annotation, in a different section's column) --
-      // checked across the whole row's used columns either way. Left untimed (all-
-      // day) when no time is found anywhere in the row, rather than assuming every
-      // exam day shares whichever day's time happened to be stated.
+      // checked across the whole row's used columns either way.
+      //
+      // Same row-wide scan also looks for the exam-week TYPE banner (see
+      // EXAM_WEEK_TYPE_RE) and, when found, updates examBlockType for this row AND
+      // every later row in the same block (the banner's own merged cell only reads
+      // back non-blank on the block's first row -- see examBlockType's declaration).
       let looseTime: string | null = extractLooseTime(firstCellText);
-      if (!looseTime) {
-        for (let col = 0; col <= range.e.c && !looseTime; col++) {
-          const text = ws[XLSX.utils.encode_cell({ r: row, c: col })]?.v;
-          if (text) looseTime = extractLooseTime(text.toString());
-        }
+      const firstCellTypeMatch = firstCellText.match(EXAM_WEEK_TYPE_RE);
+      if (firstCellTypeMatch) examBlockType = firstCellTypeMatch[1].toLowerCase() as 'mid' | 'end';
+
+      // Always scans every used column in the row (not stopping early once looseTime
+      // is found) -- the type banner and the time can be the same cell or two
+      // different cells, and only a full scan guarantees catching both regardless of
+      // which column either one happens to sit in.
+      for (let col = 0; col <= range.e.c; col++) {
+        const text = ws[XLSX.utils.encode_cell({ r: row, c: col })]?.v;
+        if (!text) continue;
+        const textStr = text.toString();
+        if (!looseTime) looseTime = extractLooseTime(textStr);
+        const typeMatch = textStr.match(EXAM_WEEK_TYPE_RE);
+        if (typeMatch) examBlockType = typeMatch[1].toLowerCase() as 'mid' | 'end';
       }
-      const baseLabel = isCapstone ? 'Capstone Exam' : `${examCode} End-Term Exam`;
+
+      // Per request: every exam day in a block shows the block's stated time (e.g.
+      // "10:00 AM"), not just the one row that happens to state it -- the banner is a
+      // cell merged across the whole block, so it genuinely does apply to every day
+      // in it, same reasoning as examBlockType above. A day with its OWN distinct
+      // stated time (e.g. Capstone's "1:30 PM onwards") keeps that instead of the
+      // carried block time; only a day with no time of its own falls back to it.
+      if (looseTime) examBlockTime = looseTime;
+      const effectiveTime = looseTime ?? examBlockTime;
+
+      // Which TYPE this specific day's exam is: an explicit per-day "(End Term)"/
+      // "(Mid Term)" suffix wins (e.g. Term II's Operations Research and ISPE, whose
+      // own exam falls inside what's otherwise Midterm week for every other subject);
+      // otherwise whichever block banner is currently in effect; otherwise -- no
+      // banner ever seen at all, e.g. Term I, which only ever ran one End-Term block
+      // and never states "Mid Term" anywhere -- falls back to 'end', preserving this
+      // function's original, always-End-Term behavior exactly.
+      const dayType: 'mid' | 'end' = daySuffixType ?? examBlockType ?? 'end';
+      const baseLabel = isCapstone ? 'Capstone Exam' : `${examCode} ${examLabelType(dayType)} Exam`;
       endTermExams.push({
         subjectCode: isCapstone ? null : examCode,
         eventDate: sessionDate,
-        label: looseTime ? `${baseLabel} — ${looseTime}` : baseLabel,
+        label: effectiveTime ? `${baseLabel} — ${effectiveTime}` : baseLabel,
       });
       continue; // whole row handled -- every other cell is confirmed blank on these rows
     }

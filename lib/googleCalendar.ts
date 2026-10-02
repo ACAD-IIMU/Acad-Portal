@@ -17,19 +17,25 @@ type ImportantEventToPush = {
   event_date: string;
   type: 'quiz' | 'endterm' | 'other';
   label: string;
+  location: string | null;
 };
 
 // Matches the exact suffix parseEvents.ts appends when a time was found in the source
 // sheet (`label += " — " + time`, time always formatted as e.g. "9:30 AM" — see
-// lib/parseEvents.ts). "Registration"/"Tutorial"/other non-subject events never get this
-// suffix at all (OTHER_EVENT_RE's branch never appends a time), which is exactly why
-// those fall through to the all-day path below rather than needing separate handling.
+// lib/parseEvents.ts). Events whose source cell states no time at all (a bare
+// "Registration", a holiday) have no suffix and fall through to the all-day path below,
+// which is why that needs no separate handling. Guest Session / Tutorial / Additional
+// Session cells DO now state a time and carry this suffix, so they land on the timed
+// path and become real timed calendar entries.
 const LABEL_TIME_SUFFIX_RE = / — (\d{1,2}):(\d{2}) (AM|PM)$/;
 
 const EVENT_DURATION_MINUTES: Record<ImportantEventToPush['type'], number> = {
   endterm: 120,
   quiz: 45,
-  other: 60 // rarely reached — "other" events essentially never carry a parsed time
+  // Guest sessions are the main real "other" with a time — the source sheet's own
+  // "6:30 - 8:00 PM" is a 90-minute slot. Only the start time is stored (important_events
+  // has no end-time column), so this duration is what reconstructs a sane block.
+  other: 90
 };
 
 function to24Hour(h: string, m: string, meridiem: string): string {
@@ -155,17 +161,22 @@ async function pushOneImportantEvent(calendar: calendar_v3.Calendar, e: Importan
     eventBody = {
       summary: e.label.replace(LABEL_TIME_SUFFIX_RE, ''),
       start: { dateTime: `${e.event_date}T${startTime}:00`, timeZone: 'Asia/Kolkata' },
-      end: { dateTime: `${endDate}T${endTime}:00`, timeZone: 'Asia/Kolkata' }
+      end: { dateTime: `${endDate}T${endTime}:00`, timeZone: 'Asia/Kolkata' },
+      // Same field the class-session push already uses for a room, so a venue shows up in
+      // Google Calendar's own Location row (and becomes tappable for directions) rather
+      // than being buried in the title. undefined, not null — the API rejects null here.
+      location: e.location ?? undefined
     };
   } else {
-    // No time available (this is the normal case for Registration, Tutorial, and other
-    // non-subject-specific events — see OTHER_EVENT_RE's comment above) — an all-day
+    // No time stated in the source cell (a bare "Registration", a holiday) — an all-day
     // event on the known date is still far more useful than not appearing at all, which
-    // was the actual gap being fixed here.
+    // was the actual gap being fixed here. A venue can still be present without a time,
+    // so it's set on this path too.
     eventBody = {
       summary: e.label,
       start: { date: e.event_date },
-      end: { date: e.event_date }
+      end: { date: e.event_date },
+      location: e.location ?? undefined
     };
   }
 
@@ -311,7 +322,7 @@ export async function pushScheduleToCalendar(studentId: string): Promise<PushRes
 
   const { data: allTermEvents } = await admin
     .from('important_events')
-    .select('id, event_date, type, label, subject_id')
+    .select('id, event_date, type, label, subject_id, location')
     .eq('term', term)
     .eq('batch_label', batchLabel);
 

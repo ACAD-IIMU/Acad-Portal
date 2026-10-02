@@ -13,7 +13,7 @@ type SessionRow = {
   session_label: string | null;
   subjects: { name: string } | null;
 };
-type EventRow = { id: string; event_date: string; type: string; label: string };
+type EventRow = { id: string; event_date: string; type: string; label: string; location?: string | null };
 
 // One color per real subject, generated on the fly rather than hardcoded by name — the
 // previous version was a static table keyed to Term IV's exact subject names ('B2B M',
@@ -122,7 +122,10 @@ export default function MonthView({
     });
     importantEvents.forEach((e) => {
       const key = e.event_date;
-      (map[key] ??= []).unshift({ label: e.label, flag: e.type });
+      // Venue reuses the existing `room` field rather than adding a parallel one — it's
+      // the same idea (where the thing happens) and the day-detail renderer below already
+      // has a place for it. Only Guest Session / Tutorial-style events ever carry one.
+      (map[key] ??= []).unshift({ label: e.label, flag: e.type, room: e.location ?? null });
     });
     return map;
   }, [sessions, importantEvents]);
@@ -301,7 +304,10 @@ function DayOverlay({
             e.flag ? (
               <div key={i} className="flex items-center gap-2.5 border border-gold-500 bg-gold-100 rounded-lg px-3 py-2 text-sm">
                 <span>{iconForFlag(e.flag!)}</span>
-                <span>{e.label}</span>
+                <span className="flex-1">{e.label}</span>
+                {/* No "Room" prefix here, unlike a class above: an event's venue is a
+                    place name ("Auditorium"), not a room number. */}
+                {e.room && <span className="text-xs text-inkFaint shrink-0">{e.room}</span>}
               </div>
             ) : (
               <div key={i} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 border border-line rounded-lg px-3 py-2 text-sm">

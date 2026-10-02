@@ -78,8 +78,22 @@ create table important_events (
   event_date date not null,
   type text not null check (type in ('quiz','endterm','other')),
   label text not null,
-  subject_id uuid references subjects(id)
+  subject_id uuid references subjects(id),
+  -- Venue for events whose source timetable cell states one -- in practice only Guest
+  -- Session / Tutorial / Additional Session cells, which write it as "(Auditorium)" after
+  -- the event name (see lib/parseEvents.ts's Pass 3). Null for everything else; quizzes
+  -- and exams never state a place. A STARTING TIME, where stated, is NOT a column here --
+  -- it rides along as a " — 6:30 PM" suffix on `label`, which lib/googleCalendar.ts parses
+  -- back out when pushing to Google Calendar (there is deliberately no end-time column, so
+  -- a single point plus a per-type default duration is all the schema carries).
+  location text
 );
+-- NOTE: this table in the live database also has a `batch_label text` column, added
+-- out-of-band when the second cohort was introduced and relied on by
+-- app/api/sync-timetable/route.ts, app/home/page.tsx and lib/googleCalendar.ts. It is
+-- recorded here as a comment rather than silently inserted into the DDL above, since this
+-- file isn't the migration that created it and shouldn't imply a clean rebuild matches
+-- production exactly.
 
 -- Server-only: refresh tokens for pushing to each student's own Google Calendar.
 -- No RLS policy is added on purpose — RLS is enabled with zero policies, so only

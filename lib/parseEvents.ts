@@ -5,6 +5,7 @@ export interface ParsedEvent {
   type: "quiz" | "endterm" | "other";
   label: string;
   subjectCodeRaw: string | null;
+  location: string | null; // venue text, e.g. "Auditorium" -- only ever populated by Pass 3 below (Registration/Tutorial/Guest Session); null everywhere else, nothing else in the source sheet states a venue
 }
 
 // Stage 1: bare keyword positions only — code, number, and time are all resolved
@@ -60,20 +61,75 @@ function normalizeForNameMatch(text: string): string {
 
 function matchNamedDay(
   rawText: string
-): { type: "other"; label: string; subjectCodeRaw: null } | null {
+): { type: "other"; label: string; subjectCodeRaw: null; location: null } | null {
   const cleaned = normalizeForNameMatch(rawText);
   if (!cleaned) return null;
 
   const holiday = NON_TEACHING_DAYS.find((h) => h.toLowerCase() === cleaned);
   if (holiday) {
-    return { type: "other", label: `Holiday — ${holiday}`, subjectCodeRaw: null };
+    return { type: "other", label: `Holiday — ${holiday}`, subjectCodeRaw: null, location: null };
   }
 
   const campusEvent = CAMPUS_EVENTS.find((c) => c.toLowerCase() === cleaned);
   if (campusEvent) {
-    return { type: "other", label: `Campus Event — ${campusEvent}`, subjectCodeRaw: null };
+    return { type: "other", label: `Campus Event — ${campusEvent}`, subjectCodeRaw: null, location: null };
   }
 
+  return null;
+}
+
+// Pass 3 only (Registration/Tutorial/Guest Session) -- confirmed directly against Term
+// II's "SM-7 Guest Session\n6:30 - 8:00 PM\n(Auditorium)" cells. The range's FIRST
+// number never carries its own AM/PM marker (only the second, closing number does --
+// "6:30 - 8:00 PM" means both are PM), so this captures the first number and borrows
+// the second's meridiem for it, rather than matching a bare time and accidentally
+// returning the END time instead of the start. Falls back to a single bare time (no
+// range) for cells that only ever state one.
+//
+// Minutes accept BOTH separators -- "6:30" and "5.30" -- because this sheet uses them
+// interchangeably ("Tutorial 2 from 5.30 pm" vs "6:30 - 8:00 PM", both real). Colon-only
+// was an actual bug: "5.30 pm" fell through to the single-time branch, which then matched
+// the fragment "30 pm" and produced a nonsense "30:00 PM".
+const TIME_RANGE_RE = /(\d{1,2})(?:[.:](\d{2}))?\s*-\s*\d{1,2}(?:[.:]\d{2})?\s*([AaPp])\.?[Mm]\.?/;
+const SINGLE_TIME_RE = /(\d{1,2})(?:[.:](\d{2}))?\s*([AaPp])\.?[Mm]\.?/;
+
+function formatTime(hour: string, minute: string | undefined, meridiemLetter: string): string {
+  return `${hour}:${minute ?? "00"} ${meridiemLetter.toUpperCase() === "A" ? "AM" : "PM"}`;
+}
+
+/** Start time only (see TIME_RANGE_RE's comment) -- same single-point-in-time
+ * convention the rest of this file and lib/googleCalendar.ts already use everywhere
+ * else (a stated end time has nowhere to be stored; important_events has no end-time
+ * column), so this plugs into the EXISTING " — H:MM AM/PM" label-suffix handling
+ * without needing any schema or downstream change for time specifically. */
+function extractEventStartTime(text: string): string | null {
+  const range = text.match(TIME_RANGE_RE);
+  if (range) return formatTime(range[1], range[2], range[3]);
+  const single = text.match(SINGLE_TIME_RE);
+  if (single) return formatTime(single[1], single[2], single[3]);
+  return null;
+}
+
+/** First parenthesized chunk that isn't a time mention or a section marker -- confirmed
+ * directly against Term II's "(Auditorium)" venue notation.
+ *
+ * Rejects by SHAPE, not by "contains a digit": a digit alone is a perfectly normal part
+ * of a real venue name ("Seminar Hall 1", "LH-3", "C-204"), so excluding all digits would
+ * silently drop those. What actually needs excluding is a clock time in parens --
+ * "(1:30 PM onwards)", a notation this codebase already uses for Capstone -- caught here
+ * by the meridiem marker and the H:MM/H.MM shape, plus a bare "(A)" / "(B)" section
+ * letter, which is a cohort marker rather than a place. */
+const PARENS_TIMEISH_RE = /\b[ap]\.?m\.?\b|\d\s*[.:]\s*\d|onwards/i;
+const PARENS_SECTION_RE = /^[A-Za-z]$/;
+
+function extractVenue(text: string): string | null {
+  for (const m of text.matchAll(/\(([^)]+)\)/g)) {
+    const inner = m[1].trim();
+    if (!inner) continue;
+    if (PARENS_TIMEISH_RE.test(inner)) continue;
+    if (PARENS_SECTION_RE.test(inner)) continue;
+    return inner;
+  }
   return null;
 }
 
@@ -104,7 +160,7 @@ function stripLeadingNoise(text: string): string {
 
 function extractEventsFromText(
   rawText: string
-): Array<{ subjectCodeRaw: string | null; type: "quiz" | "endterm" | "other"; label: string }> {
+): Array<{ subjectCodeRaw: string | null; type: "quiz" | "endterm" | "other"; label: string; location: string | null }> {
   // Pass 0: whole-cell named days (holidays, campus events). Runs FIRST, before the
   // keyword passes, so a holiday name can never be partially consumed by a later pattern
   // and so these produce one clean subject-less event each — batch-wide by definition,
@@ -115,7 +171,7 @@ function extractEventsFromText(
   const keywordMatches = [...rawText.matchAll(new RegExp(KEYWORD_RE))];
 
   if (keywordMatches.length > 0) {
-    const events: Array<{ subjectCodeRaw: string | null; type: "quiz" | "endterm" | "other"; label: string }> = [];
+    const events: Array<{ subjectCodeRaw: string | null; type: "quiz" | "endterm" | "other"; label: string; location: string | null }> = [];
     let cursor = 0; // where the next event's code search starts — advances past each event's own consumed number+time
 
     for (let i = 0; i < keywordMatches.length; i++) {
@@ -169,13 +225,15 @@ function extractEventsFromText(
 
       let label = type === "quiz" && num ? `${code} Quiz ${num}` : `${code} ${keyword}`;
       if (time) label += ` — ${time}`;
-      events.push({ subjectCodeRaw: code, type, label: label.trim() });
+      // location stays null: Quiz / Mid-Term / End-Term cells in the source sheet state
+      // a time but never a venue (confirmed across Term I and Term II's tabs).
+      events.push({ subjectCodeRaw: code, type, label: label.trim(), location: null });
     }
     return events;
   }
 
   // Pass 2: end-of-term arrow shorthand, e.g. "MoB => 9.30 am", possibly multiple codes via "&"
-  const events2: Array<{ subjectCodeRaw: string | null; type: "quiz" | "endterm" | "other"; label: string }> = [];
+  const events2: Array<{ subjectCodeRaw: string | null; type: "quiz" | "endterm" | "other"; label: string; location: string | null }> = [];
   let m: RegExpExecArray | null;
   const re2 = new RegExp(ARROW_EXAM_RE);
   while ((m = re2.exec(rawText)) !== null) {
@@ -185,7 +243,7 @@ function extractEventsFromText(
       .map((c) => c.trim())
       .filter(Boolean);
     for (const code of codes) {
-      events2.push({ subjectCodeRaw: code, type: "endterm", label: `${code} End Term Exam` });
+      events2.push({ subjectCodeRaw: code, type: "endterm", label: `${code} End Term Exam`, location: null });
     }
   }
   if (events2.length > 0) return events2;
@@ -198,8 +256,32 @@ function extractEventsFromText(
     const prefixRaw = rawText.slice(0, otherMatch.index).trim();
     const subjectCode = prefixRaw ? prefixRaw.split("(")[0].trim() : null;
     const eventName = otherMatch[1].replace(/\s+/g, " ").trim();
-    const label = subjectCode ? `${subjectCode} ${eventName}` : eventName;
-    return [{ subjectCodeRaw: subjectCode || null, type: "other", label }];
+    // Label keeps the full code AS WRITTEN (e.g. "SM-7 Guest Session") -- the session
+    // number is genuinely useful to a student reading their calendar. But the subject
+    // LOOKUP needs the bare code alone: subjects.name never carries a session number,
+    // so "SM-7" against a table that only has "SM" always missed, silently leaving
+    // every Guest-Session-style event unlinked to its subject. Confirmed directly:
+    // Term II's "SM-7 Guest Session" cells. Only strips a trailing "-<digits>" --
+    // never the whole string -- so a code with no trailing number (e.g. "CB") passes
+    // through unchanged.
+    // Everything AFTER the matched keyword is where this cell states its time and venue
+    // (real Term II data, one cell across three lines: "SM-7 Guest Session" /
+    // "6:30 - 8:00 PM" / "(Auditorium)"). Scoped to the trailing text deliberately --
+    // searching the whole cell would let the leading code's own digits (the "7" in
+    // "SM-7") or a section marker in parens be misread as a time or a venue.
+    const trailing = rawText.slice((otherMatch.index ?? 0) + otherMatch[0].length);
+    const startTime = extractEventStartTime(trailing);
+    const location = extractVenue(trailing);
+
+    let label = subjectCode ? `${subjectCode} ${eventName}` : eventName;
+    // Time rides along as the established " — H:MM AM/PM" label suffix rather than a new
+    // column: lib/googleCalendar.ts's LABEL_TIME_SUFFIX_RE already parses exactly this
+    // shape back out when pushing to Google Calendar, so a timed Guest Session becomes a
+    // real timed calendar event with zero downstream changes needed for time.
+    if (startTime) label += ` — ${startTime}`;
+
+    const subjectCodeForLookup = subjectCode ? subjectCode.replace(/-\s*\d+\s*$/, "").trim() || subjectCode : null;
+    return [{ subjectCodeRaw: subjectCodeForLookup, type: "other", label, location }];
   }
 
   return []; // genuinely not an event — e.g. the MG double-period notation, a stray timestamp fragment
@@ -234,7 +316,8 @@ export function extractEventsFromUnmapped(unmapped: UnmappedEntry[]): {
           eventDate: entry.sessionDate,
           type: e.type,
           label: e.label,
-          subjectCodeRaw: e.subjectCodeRaw
+          subjectCodeRaw: e.subjectCodeRaw,
+          location: e.location
         });
       }
     }

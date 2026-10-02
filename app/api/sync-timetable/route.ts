@@ -257,12 +257,17 @@ export async function GET(req: Request) {
     type: "quiz" | "endterm" | "other";
     label: string;
     subject_id: string | null;
+    location: string | null;
   }> = events.map((e) => ({
     term: TERM,
     batch_label: BATCH_LABEL,
     event_date: e.eventDate,
     type: e.type,
     label: e.label,
+    // Venue, when the source cell states one -- only Guest Session / Tutorial /
+    // Additional Session cells ever do (see lib/parseEvents.ts's Pass 3). Null for
+    // everything else, which is exactly what the column allows.
+    location: e.location ?? null,
     // Reuses the same subject map already built for sessions above — no extra query needed.
     // Null is fine here (e.g. "Registration" has no subject); the column allows it.
     subject_id: e.subjectCodeRaw
@@ -285,7 +290,9 @@ export async function GET(req: Request) {
       event_date: e.eventDate,
       type: "endterm" as const,
       label: e.label,
-      subject_id: e.subjectCode ? subjectByNormCode.get(normalizeCode(e.subjectCode)) ?? null : null
+      subject_id: e.subjectCode ? subjectByNormCode.get(normalizeCode(e.subjectCode)) ?? null : null,
+      // Exam-week blocks state a start time (carried into the label) but never a venue.
+      location: null
     }))
   );
 

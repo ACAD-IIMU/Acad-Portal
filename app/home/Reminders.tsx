@@ -8,6 +8,10 @@ type EventRow = {
   event_date: string;
   type: 'quiz' | 'endterm' | 'other';
   label: string;
+  // Venue, only ever set for Guest Session / Tutorial-style events whose source cell
+  // states one; optional so this type stays assignable from a row selected before the
+  // column existed.
+  location?: string | null;
 };
 
 type PersonalReminder = {
@@ -128,6 +132,9 @@ export default function Reminders({
           return (
             <ReminderItem key={e.id} icon={icon}>
               {e.label} — <b>{dateLabel}</b> ({when})
+              {/* The time, when there is one, is already inside e.label as the
+                  " — 6:30 PM" suffix the sync appends; only the venue needs adding. */}
+              {e.location && <span className="text-inkFaint"> · {e.location}</span>}
             </ReminderItem>
           );
         })}
