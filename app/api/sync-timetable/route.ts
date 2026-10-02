@@ -222,6 +222,36 @@ export async function GET(req: Request) {
     });
   }
 
+  // 3b) De-duplicate against the SAME natural key sync_sessions_for_term upserts on
+  //     (subject, section, term, session_number). Postgres refuses an ON CONFLICT DO
+  //     UPDATE whose input batch contains that key twice -- "command cannot affect row a
+  //     second time" -- and rejects the WHOLE call, so a single duplicated cell in the
+  //     source sheet takes down the entire sync rather than just itself. That is exactly
+  //     what happened once a multi-line cell started yielding a real class (see
+  //     lib/parseGridTimetable.ts): a session the sheet states twice became two rows.
+  //
+  //     Rows with a NULL session_number are deliberately NOT de-duplicated: Postgres
+  //     treats NULLs as distinct in a unique index by default, so they cannot collide
+  //     with each other, and collapsing them here would silently drop legitimately
+  //     repeated named one-offs (MOC, "Excel Cohort 2", ...) that carry no number.
+  //
+  //     Duplicates are REPORTED, not silently swallowed -- a collision is usually a real
+  //     quirk in the sheet worth a human look (the same class written into two slots),
+  //     and the previous behavior of failing loudly at least made it visible. This keeps
+  //     it visible while letting the other ~640 sessions through.
+  const seenSessionKeys = new Set<string>();
+  const duplicateSessions: string[] = [];
+  const dedupedRowsToInsert = rowsToInsert.filter((r) => {
+    if (r.session_number === null || r.session_number === undefined) return true;
+    const key = `${r.subject_id}::${r.section_id ?? ""}::${r.session_number}`;
+    if (seenSessionKeys.has(key)) {
+      duplicateSessions.push(`session ${r.session_number} on ${r.session_date} (subject ${r.subject_id}, section ${r.section_id ?? "none"})`);
+      return false;
+    }
+    seenSessionKeys.add(key);
+    return true;
+  });
+
   // 4) Atomic upsert: matches each row against its stable natural key (subject, section,
   //    term, session_number) — updates in place if that class already existed (keeping its
   //    id stable, so anything attached to it like a future preread stays attached), inserts
@@ -238,7 +268,7 @@ export async function GET(req: Request) {
   const { data: syncResult, error: syncErr } = await supabase.rpc("sync_sessions_for_term", {
     target_term: TERM,
     target_batch_label: BATCH_LABEL,
-    rows: rowsToInsert,
+    rows: dedupedRowsToInsert,
   });
   if (syncErr) {
     return NextResponse.json({ error: "Failed to sync sessions", detail: syncErr.message }, { status: 500 });
@@ -346,7 +376,11 @@ export async function GET(req: Request) {
     ok: true,
     batch: batchParam,
     term: TERM,
-    sessionsProcessed: rowsToInsert.length,
+    sessionsProcessed: dedupedRowsToInsert.length,
+    // Non-zero means the sheet states the same (subject, section, session number) more
+    // than once. Not fatal any more, but worth reading -- see the de-dup block above.
+    duplicateSessionsDropped: duplicateSessions.length,
+    duplicateSessionsSample: duplicateSessions.slice(0, 20),
     sessionsUpsertedOrUnchanged: upsertedCount,
     sessionsRemoved: deletedCount,
     unresolvedSubjectCodes: [...new Set(unresolvedSubjects)],
