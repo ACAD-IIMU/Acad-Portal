@@ -329,7 +329,9 @@ export default async function EapPointsPage() {
             releases them.
           </p>
         </div>
-        <Term6CreditPlanner />
+        <div className="mt-5">
+          <Term6CreditPlanner />
+        </div>
       </Shell>
     );
   }
@@ -443,7 +445,9 @@ export default async function EapPointsPage() {
       </div>
 
       {/* Term VI credit planner — self-entered, no DB reads (see the component header) */}
-      <Term6CreditPlanner />
+      <div className="mt-5">
+        <Term6CreditPlanner />
+      </div>
     </Shell>
   );
 }
