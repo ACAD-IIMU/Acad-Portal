@@ -17,6 +17,11 @@ const BIDDING_TERM = 'Term V'; // the term being bid FOR — one ahead of CURREN
 // entirely so this can't break due to any student's individual data state.
 const EAP_SECTION_DISABLED = false;
 
+// Temporary — while false, students see only the Term VI credit planner on this
+// tab: the bid points banner and component breakdown are hidden and their DB
+// queries are skipped. Set back to true to show bid points again.
+const SHOW_BID_POINTS = false;
+
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 import CourseWorkshopsRow from '@/components/CourseWorkshopsRow';
@@ -258,6 +263,14 @@ export default async function EapPointsPage() {
   const userMenu = (
     <UserMenu name={student.full_name ?? 'Student'} regNo={student.reg_no} batchLabel={student.batch_label} />
   );
+
+  if (!SHOW_BID_POINTS) {
+    return (
+      <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
+        <Term6CreditPlanner />
+      </Shell>
+    );
+  }
 
   const { data: pointsData } = await supabase
     .from('stg_eap_points_term5_v2')
