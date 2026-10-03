@@ -4,6 +4,9 @@
 // .relative after .fixed, so it silently overrides `fixed` on mobile and the hidden
 // drawer goes back to reserving its full 250px width in the page flow (the blank
 // left column bug). `fixed` already anchors the absolutely-positioned collapse toggle.
+// Also don't put `overflow-y-auto` back on the <aside> — it forces overflow-x to `auto`
+// too, which clips the collapse toggle's deliberate -right-3 overhang. The scrolling
+// lives on an inner wrapper instead; see the comment at that div.
 // Self-determines the active item from the current URL
 // (usePathname). Two behaviors:
 //   - Mobile (below md breakpoint): hamburger toggle + slide-in drawer + backdrop.
@@ -149,7 +152,7 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
         className={`
           bg-gradient-to-b from-brand-950 to-brand-900 text-brand-50 flex flex-col
           p-5 w-[250px] ${railWidth} flex-shrink-0
-          fixed top-0 left-0 h-[100dvh] md:h-screen overflow-y-auto z-50 transition-all duration-200
+          fixed top-0 left-0 h-[100dvh] md:h-screen z-50 transition-all duration-200
           md:sticky md:translate-x-0
           ${open ? 'translate-x-0' : '-translate-x-full'}
         `}
@@ -173,6 +176,17 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
             <path d="M15 6l-6 6 6 6" />
           </svg>
         </button>
+
+        {/* Scrolling lives HERE, not on the <aside>, and that is load-bearing: the
+            collapse toggle above is positioned at -right-3, i.e. deliberately
+            overhanging the sidebar's own edge. CSS does not allow one axis to scroll
+            while the other stays visible -- setting overflow-y to auto forces
+            overflow-x to auto as well -- so an overflow-y-auto <aside> clipped the
+            button in half. Keeping the aside's overflow visible and scrolling this
+            inner wrapper instead gives the same long-sidebar scrolling without the clip.
+            min-h-0 is required for a flex child to be allowed to shrink and scroll at
+            all; without it this wrapper just grows and the scrollbar never appears. */}
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
 
         <div className={`flex items-center gap-2.5 pb-6 px-1 ${collapsed ? 'md:justify-center md:gap-0' : ''}`}>
           <Image
@@ -222,6 +236,8 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
             Student Portal
           </div>
         )}
+
+        </div>
       </aside>
     </>
   );
