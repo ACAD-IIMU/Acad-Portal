@@ -21,6 +21,7 @@ import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 import CourseWorkshopsRow from '@/components/CourseWorkshopsRow';
 import UserMenu from '@/components/UserMenu';
+import Term6CreditPlanner from '@/components/Term6CreditPlanner';
 import type { ReactNode } from 'react';
 
 type EapPointsRow = {
@@ -315,6 +316,7 @@ export default async function EapPointsPage() {
             releases them.
           </p>
         </div>
+        <Term6CreditPlanner />
       </Shell>
     );
   }
@@ -426,6 +428,9 @@ export default async function EapPointsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Term VI credit planner — self-entered, no DB reads (see the component header) */}
+      <Term6CreditPlanner />
     </Shell>
   );
 }
