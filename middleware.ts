@@ -36,9 +36,12 @@ export async function middleware(request: NextRequest) {
   // a CRON_SECRET header) and manual testing via a ?secret= query param. Both
   // checks live inside that route itself; middleware must let the request
   // through to it rather than redirecting to /login first.
+  // /api/calendar/invites is the same situation: it is called by the Apps Script inside
+  // acad@iimu.ac.in (no portal login), and checks CALENDAR_SYNC_SECRET itself.
   const isPublicPath = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/auth') ||
-    request.nextUrl.pathname.startsWith('/api/sync-timetable');
+    request.nextUrl.pathname.startsWith('/api/sync-timetable') ||
+    request.nextUrl.pathname.startsWith('/api/calendar/invites');
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url));

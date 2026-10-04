@@ -121,6 +121,33 @@ export async function GET(req: Request) {
   });
   const drive = google.drive({ version: "v3", auth });
 
+  // Optional settle window (?settle=<seconds>), used by the frequent external scheduler
+  // (cron-job.org), not by the daily Vercel cron. If the sheet was edited within the
+  // last <settle> seconds, the office may be mid-edit (e.g. cleared the old slot but not
+  // yet typed the new one) — syncing that half-state would tell students a class was
+  // cancelled when it was only moving. So skip this run; the next one picks it up once
+  // the sheet has been quiet. Best-effort: if the check itself fails, sync as normal.
+  const settleSeconds = Number(url.searchParams.get("settle") ?? "0");
+  if (Number.isFinite(settleSeconds) && settleSeconds > 0) {
+    try {
+      const meta = await drive.files.get({ fileId: config.fileId, fields: "modifiedTime" });
+      const modifiedAt = meta.data.modifiedTime ? Date.parse(meta.data.modifiedTime) : NaN;
+      const quietForMs = Date.now() - modifiedAt;
+      if (!Number.isNaN(modifiedAt) && quietForMs < settleSeconds * 1000) {
+        return NextResponse.json({
+          ok: true,
+          skipped: "settling",
+          batch: batchParam,
+          sheetLastEdited: meta.data.modifiedTime,
+          quietForSeconds: Math.round(quietForMs / 1000),
+          settleSeconds,
+        });
+      }
+    } catch (err: any) {
+      console.warn("settle check failed, syncing anyway:", err?.message ?? err);
+    }
+  }
+
   let buffer: Buffer;
   try {
     if (config.isNativeSheet) {

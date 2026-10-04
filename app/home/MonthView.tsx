@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { formatTime12h } from '@/lib/formatTime';
-import AddToCalendarButton from './AddToCalendarButton';
+// AddToCalendarButton is switched off: it wrote classes into each student's own calendar
+// as a one-time copy that never updated or removed cancelled classes. Classes will instead
+// arrive as invites from acad@iimu.ac.in, which update for everyone when the timetable
+// changes. Kept out of the UI (not deleted) until the invite system is live.
 
 type SessionRow = {
   id: string;
@@ -187,7 +190,6 @@ export default function MonthView({
             </button>
           </div>
         </div>
-        <AddToCalendarButton />
       </div>
       <div className="flex gap-3 flex-wrap text-xs text-inkSoft mb-4">
         {uniqueSubjects.map((name) => (

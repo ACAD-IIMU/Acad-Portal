@@ -7,3 +7,5 @@ node_modules
 next-env.d.ts
 .env*
 .DS_Store
+# Reports from scripts/legacy-calendar-cleanup.ts — contain student emails, repo is public
+cleanup-report-*.csv
