@@ -285,40 +285,46 @@ export default async function SrElectionsPage() {
     const admin = createAdminClient();
     const { data: srAssignments } = await admin
       .from('sr_assignments')
-      .select('subjects(name), sections(section_label), students(full_name, reg_no, email, phone)')
+      .select('subject_id, section_id, subjects(name), sections(section_label), students(full_name, reg_no, email, phone)')
       .eq('term', TERM);
 
-    // Scope Results to the viewer's OWN section only — a student should see
-    // who's SR for every subject in their own section, not the whole
-    // cohort's roster across every section. Read via the regular (RLS-bound)
-    // `supabase` client, not `admin`, since this is the viewer's own
-    // enrollment data — same access pattern the Nomination tab's own
-    // enrollments query above already uses.
+    // Scope Results to the viewer's OWN classes: for every subject the viewer
+    // is enrolled in this term, show the SR of the exact section they sit in.
     //
-    // Sections are per-subject (a fresh row per subject, even for the same
-    // label), so a student's "own section" isn't a single fixed id — it's
-    // whichever label their own enrollment rows share. Pulling it from one
-    // enrollment row is enough because every Term/TERM subject enrollment
-    // for a given student carries the same section_label by design (see
-    // mba1_term2_carryforward.sql's "same section carries over" — a student
-    // isn't split across different sections for different subjects in one
-    // term).
+    // Match on (subject_id, section_id) PAIRS — never on one section label.
+    // An earlier version (8bdee35, 26 Sep 2026) read a single enrollment row
+    // and kept only assignments whose section_label equalled it, on the
+    // assumption that a student is in the same section for every subject in a
+    // term. That holds for MBA1 in Terms I–II, but NOT for MBA2 from Term III
+    // on, where sections vary per subject (and electives). For MBA2/Term V it
+    // hid every subject the viewer takes in a different section, and showed
+    // Sec-X SRs for subjects the viewer doesn't take at all. `.limit(1)` with
+    // no order also made which label won effectively arbitrary.
     //
-    // If a student has no sectioned enrollment at all for this term (fully
-    // unsectioned subjects, or no enrollment data loaded yet), there's no
-    // section to scope by — fall back to showing everything rather than
-    // silently showing nothing.
-    const { data: viewerEnrollment } = await supabase
+    // Null-safe on section: if either the assignment or the enrollment has no
+    // section (unsectioned elective), match on subject alone.
+    //
+    // Read via the regular (RLS-bound) `supabase` client, not `admin` — this
+    // is the viewer's own enrollment data.
+    //
+    // If the viewer has no enrollments for this term at all (data not loaded
+    // yet), fall back to showing everything rather than silently nothing.
+    const { data: viewerEnrollments } = await supabase
       .from('enrollments')
-      .select('sections(section_label)')
+      .select('subject_id, section_id')
       .eq('student_id', student.id)
-      .eq('term', TERM)
-      .not('section_id', 'is', null)
-      .limit(1)
-      .maybeSingle();
-    const viewerSectionLabel = (viewerEnrollment as any)?.sections?.section_label ?? null;
+      .eq('term', TERM);
+
+    const enrolled = (viewerEnrollments ?? []) as { subject_id: string; section_id: string | null }[];
+    const isViewersClass = (subjectId: string, sectionId: string | null) =>
+      enrolled.some(
+        (e) =>
+          e.subject_id === subjectId &&
+          (e.section_id == null || sectionId == null || e.section_id === sectionId)
+      );
 
     const resultsRows = (srAssignments ?? [])
+      .filter((r: any) => enrolled.length === 0 || isViewersClass(r.subject_id, r.section_id ?? null))
       .map((r: any) => ({
         subjectName: subjectDisplayName(r.subjects?.name, TERM) || '—',
         sectionLabel: r.sections?.section_label ?? null,
@@ -327,7 +333,6 @@ export default async function SrElectionsPage() {
         email: r.students?.email ?? '—',
         phone: r.students?.phone ?? null
       }))
-      .filter((r) => viewerSectionLabel == null || r.sectionLabel === viewerSectionLabel)
       .sort((a, b) => a.subjectName.localeCompare(b.subjectName) || (a.sectionLabel ?? '').localeCompare(b.sectionLabel ?? ''));
 
     resultsContent = <Results rows={resultsRows} />;
