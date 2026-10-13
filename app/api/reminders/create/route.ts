@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { TERM_5 } from '@/lib/term5';
 
 export async function POST(request: NextRequest) {
   const supabase = createClient();
@@ -38,9 +37,19 @@ export async function POST(request: NextRequest) {
   }
 
   // sr_announcement — must correspond to an actual SR assignment for this student. The
-  // term is taken from that assignment, not trusted from the client, currently always
-  // TERM_5 (MBA2's only cohort with SR assignments live so far) but resolved this way so
-  // it stays correct automatically once MBA1/Term II SR assignments exist too.
+  // term is taken from that assignment (see `term: assignment.term` on the insert below),
+  // never trusted from the client.
+  //
+  // This deliberately does NOT filter by term. It used to pin .eq('term', TERM_5) on the
+  // grounds that MBA2/Term V was the only cohort with live SR assignments -- which stopped
+  // being true the moment MBA1's Term II SR election closed, and silently 403'd every
+  // Term II SR ("You are not the assigned SR for that subject/section") even though their
+  // assignment existed and was correct.
+  //
+  // A term filter was never load-bearing anyway: `subjects` rows are per-term, so a
+  // subject_id already implies exactly one term, and student + subject + section is
+  // therefore unique on its own. Re-adding a hardcoded term here would just reintroduce
+  // the same bug for whichever cohort comes next.
   if (!subjectId) {
     return NextResponse.json({ error: 'subjectId is required for a class announcement' }, { status: 400 });
   }
@@ -49,8 +58,7 @@ export async function POST(request: NextRequest) {
     .from('sr_assignments')
     .select('subject_id, section_id, term')
     .eq('student_id', student.id)
-    .eq('subject_id', subjectId)
-    .eq('term', TERM_5); // scoping today's only live SR-assignment term; see note above
+    .eq('subject_id', subjectId);
 
   assignmentQuery = sectionId ? assignmentQuery.eq('section_id', sectionId) : assignmentQuery.is('section_id', null);
 
