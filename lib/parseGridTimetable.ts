@@ -6,11 +6,11 @@
 // sheets need separate parsers. That comment said the difference was strikethrough
 // format (cell-level vs rich-text runs). It isn't, really:
 //
-//   - Strikethrough: MBA1's sheet uses plain whole-cell styling (confirmed directly
-//     against the raw XML — every struck cell is a shared-string with no rich-text
-//     runs at all, its strike coming purely from the cell's own font style). That's
-//     exactly the case buildStrikethroughMap()'s existing styleIndexStruck() fallback
-//     already handles. No changes needed there — imported unchanged below.
+//   - Strikethrough: MBA1's sheet mostly uses plain whole-cell styling, which
+//     buildStrikethroughMap()'s styleIndexStruck() fallback handles. UPDATE (Oct 2026):
+//     the Term-II tab also has cells where only PART of the text is struck (an old
+//     class number or time struck out, the new one left plain). Those are now read by
+//     dropping the struck runs -- see "Cell-level time overrides" below.
 //
 //   - The REAL difference is the grid layout itself:
 //       MBA2: one column per daily TIME SLOT (6 of them). A single cell can hold
@@ -269,6 +269,155 @@ function extractLooseTime(text: string): string | null {
 const BARE_CODE_RE = /^([A-Za-z]+)(?:\s*-\s*(LAB))?$/i;
 const UNNUMBERED_SUBJECT_CODES = new Set(["MOC", "EXCEL"]); // confirmed directly -- the only two subjects seen bare anywhere in the real sheet
 
+// ---------------------------------------------------------------------------------
+// Cell-level time overrides and multi-line cells (added Oct 2026, confirmed against
+// the real Term-II tab, not guessed):
+//
+//   - A class cell can state its OWN time under the class name when it doesn't run in
+//     the standard slot: "WAC-8\n2:30-5:45" (5 Nov, a cell merged across slots 4-5),
+//     "WAC-5\n(3:30-5:30)" (23 Oct), or inline "WAC-10 (4:15-5:45)". Previously the
+//     time line was dropped and the class got the slot's default time (e.g. 2:30-4:00
+//     instead of 2:30-5:45).
+//   - Office edits are often made by striking out PART of a cell and writing the new
+//     value next to it: "~~WAC-10~~\nSM-10" (13 Nov, Sections B and C), "~~WAC-9~~\nWAC-7"
+//     (4 Nov, Section E), "WAC-5\n~~(2:30-4:30)~~\n(3:30-5:30)". This file used to
+//     ignore partial strikes completely, so the struck text was read as real: the
+//     cancelled class was created, the real one was dropped, and the cancelled one then
+//     collided with its real date elsewhere in the sheet (the "duplicate session"
+//     warnings in the sync response).
+//
+// Times in these cells usually carry no am/pm ("2:30-5:45"). The meridiem is chosen
+// as whichever reading lands nearest the slot the cell sits in -- a cell in the
+// 2:30 PM slot saying "2:30" means 2:30 PM. An explicit "am"/"pm" always wins.
+// ---------------------------------------------------------------------------------
+
+// "2:30-5:45", "(3:30-5:30)", "8:30-11:45 am", "4:15 - 5:45 pm", "2:45 to 3".
+const CELL_TIME_RANGE_RE =
+  /(\d{1,2})[:.](\d{2})\s*([ap]\.?m\.?)?\s*(?:-|–|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*([ap]\.?m\.?)?/i;
+// A line that is ONLY a time range (optionally in brackets).
+const TIME_ONLY_LINE_RE = new RegExp(`^\\(?\\s*${CELL_TIME_RANGE_RE.source}\\s*\\)?$`, "i");
+// A time range in brackets or after a space at the END of a class line: "WAC-10 (4:15-5:45)".
+const TRAILING_TIME_RE = new RegExp(`\\s*\\(?\\s*(${CELL_TIME_RANGE_RE.source})\\s*\\)?\\s*$`, "i");
+
+function minutesToHHMM(totalMin: number): string {
+  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+}
+
+function hhmmToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/** Reads a time range written inside a class cell. `slotStartMin` is the start of the
+ * slot the cell sits in, used only to choose am/pm when the cell doesn't say. Returns
+ * null for anything implausible (under 15 minutes or over 6 hours), so a misread can
+ * never produce a nonsense calendar entry -- the slot's default time is used instead. */
+function parseCellTimeRange(text: string, slotStartMin: number): { startTime: string; endTime: string } | null {
+  const m = text.match(CELL_TIME_RANGE_RE);
+  if (!m) return null;
+  const [, sh, sm, sMer, eh, em, eMer] = m;
+  const isPm = (mer: string | undefined) => (mer ? /^p/i.test(mer) : null);
+  const toMin = (h: string, min: string | undefined, pm: boolean) => {
+    let hour = parseInt(h, 10) % 12;
+    if (pm) hour += 12;
+    return hour * 60 + parseInt(min ?? "0", 10);
+  };
+
+  const startPmExplicit = isPm(sMer);
+  const endPmExplicit = isPm(eMer);
+
+  let startMin: number;
+  if (startPmExplicit !== null) {
+    startMin = toMin(sh, sm, startPmExplicit);
+  } else if (endPmExplicit !== null && sMer === undefined) {
+    // "8:30-11:45 am" / "2:30-4:00 pm": the trailing meridiem applies to the start too,
+    // unless that would put the start after the end ("11:45-1:15 pm" = am to pm).
+    startMin = toMin(sh, sm, endPmExplicit);
+    const endTry = toMin(eh, em, endPmExplicit);
+    if (startMin > endTry) startMin = toMin(sh, sm, !endPmExplicit);
+  } else {
+    const am = toMin(sh, sm, false);
+    const pm = toMin(sh, sm, true);
+    startMin = Math.abs(am - slotStartMin) <= Math.abs(pm - slotStartMin) ? am : pm;
+  }
+
+  let endMin: number;
+  if (endPmExplicit !== null) {
+    endMin = toMin(eh, em, endPmExplicit);
+  } else {
+    const am = toMin(eh, em, false);
+    const pm = toMin(eh, em, true);
+    endMin = am > startMin ? am : pm;
+  }
+
+  const duration = endMin - startMin;
+  if (duration < 15 || duration > 6 * 60) return null;
+  return { startTime: minutesToHHMM(startMin), endTime: minutesToHHMM(endMin) };
+}
+
+type ClassLineMatch =
+  | { kind: "cohort"; rawCode: string; cohortNum: number; sheetSessionNum: number; lab: boolean; roomOverride: string | null }
+  | { kind: "numbered"; rawCode: string; sessionNum: number }
+  | { kind: "bare"; rawCode: string; lab: boolean };
+
+/** Is this single line a class? Same three grammars as before (Cohort entry,
+ * "{code}-{n}", allow-listed bare code), just applied per line instead of per cell. */
+function matchClassLine(line: string): ClassLineMatch | null {
+  const cohortMatch = line.match(COHORT_RE);
+  if (cohortMatch) {
+    const [, rawCode, cohortNumStr, sessionNumStr, labMarker, roomOverride] = cohortMatch;
+    return {
+      kind: "cohort",
+      rawCode: rawCode.trim(),
+      cohortNum: parseInt(cohortNumStr, 10),
+      sheetSessionNum: parseInt(sessionNumStr, 10),
+      lab: Boolean(labMarker),
+      roomOverride: roomOverride?.trim() || null,
+    };
+  }
+  const numberedMatch = line.match(NUMBERED_RE);
+  if (numberedMatch) {
+    return { kind: "numbered", rawCode: numberedMatch[1].trim(), sessionNum: parseInt(numberedMatch[2], 10) };
+  }
+  const bareMatch = line.match(BARE_CODE_RE);
+  if (bareMatch && UNNUMBERED_SUBJECT_CODES.has(normalizeCode(bareMatch[1]))) {
+    return { kind: "bare", rawCode: bareMatch[1].trim(), lab: Boolean(bareMatch[2]) };
+  }
+  return null;
+}
+
+type CellLine =
+  | { kind: "class"; match: ClassLineMatch; timeText: string | null }
+  | { kind: "time"; text: string }
+  | { kind: "other"; text: string };
+
+/** Line-by-line reading only: no real subject code is a single letter, so a lone
+ * "S - 4" line (the session part of a wrapped Cohort entry) is never a class by itself. */
+function isPlausibleLineClass(m: ClassLineMatch): boolean {
+  return m.rawCode.length >= 2;
+}
+
+/** Splits a cell's (already strike-filtered) text into lines and labels each one. */
+function classifyCellLines(text: string): CellLine[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  return lines.map((line): CellLine => {
+    if (TIME_ONLY_LINE_RE.test(line)) return { kind: "time", text: line };
+    const whole = matchClassLine(line);
+    if (whole && isPlausibleLineClass(whole)) return { kind: "class", match: whole, timeText: null };
+    // "WAC-10 (4:15-5:45)": a class with its own time on the same line.
+    const trailing = line.match(TRAILING_TIME_RE);
+    if (trailing && trailing.index !== undefined && trailing.index > 0) {
+      const withoutTime = line.slice(0, trailing.index).trim();
+      const m = matchClassLine(withoutTime);
+      if (m && isPlausibleLineClass(m)) return { kind: "class", match: m, timeText: trailing[1] };
+    }
+    return { kind: "other", text: line };
+  });
+}
+
 /** Finds the row (within the first maxScanRow rows) whose first three columns read
  * "Month"/"Date"/"Day" -- same signal parseTimetable.ts's findHeaderRow uses, not
  * imported from there (see file header) so this file makes zero edits to that
@@ -378,6 +527,13 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
   const headerRow = findGridHeaderRow(ws, 10);
   const groups = findSectionGroups(ws, headerRow, range.e.c);
   const dataStartRow = headerRow + 3; // header row, "Session Number" row, "Session timings" row, then data
+
+  // Top-left address of every merged cell -> the last column it covers. Used to give a
+  // class cell merged across two slots (e.g. "WAC-8" over slots 4-5) the combined time.
+  const mergedEndColByAddr = new Map<string, number>();
+  for (const merge of ws["!merges"] ?? []) {
+    mergedEndColByAddr.set(XLSX.utils.encode_cell(merge.s), merge.e.c);
+  }
 
   const sessions: ParsedSession[] = [];
   const unmapped: UnmappedEntry[] = [];
@@ -545,132 +701,143 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
           });
           continue;
         }
-        // MBA1's sheet was confirmed to have no rich-text runs at all (see file
-        // header) -- a mixed-run cell isn't expected here, but if one ever appears,
-        // fall back to the raw text rather than silently dropping the cell.
-        //
-        // A cell occasionally combines a REAL numbered class session with separate
-        // event text on a later line -- confirmed directly: Term II's WAC-6 class
-        // coincides, for one section only, with the SM-7 Guest Session announcement,
-        // both written into the same cell ("WAC-6\nSM-7 Guest Session 6:30 - 8:00 PM
-        // (Auditorium)"). Treating the whole cell as one blob either silently drops
-        // the real WAC-6 class (it never gets created as a session at all) or garbles
-        // the event's label into something like "WAC-6 SM-7 Guest Session" -- which
-        // also breaks de-duplication against the SAME event's plain "SM-7 Guest
-        // Session" text in every other section's cell, producing two separate
-        // calendar entries for one real event. Peel off a first line that is ITSELF
-        // a clean numbered session before falling through to the single-cellText
-        // checks below, so the class and the event get handled independently.
-        // Scoped to NUMBERED_RE only (not COHORT_RE/BARE_CODE_RE) -- the only
-        // multi-line combo actually observed in real data so far.
-        const rawLines = rawCellText.split(/\r?\n/).map((l: string) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
-        let cellText = rawCellText.replace(/\s+/g, " ").trim();
-        let extraEventText: string | null = null;
-        if (rawLines.length > 1 && NUMBERED_RE.test(rawLines[0])) {
-          cellText = rawLines[0];
-          extraEventText = rawLines.slice(1).join(" ");
+
+        // Partly struck cells: keep only the text that is NOT struck (see the
+        // "Cell-level time overrides" note above the helpers). The struck part is
+        // reported in skippedStrikethrough so it stays visible in the sync response.
+        let cellSourceText = rawCellText;
+        if (strikeInfo?.runs && strikeInfo.runs.some((r) => r.struck)) {
+          const struckText = strikeInfo.runs.filter((r) => r.struck).map((r) => r.text).join("").trim();
+          cellSourceText = strikeInfo.runs.filter((r) => !r.struck).map((r) => r.text).join("");
+          skippedStrikethrough.push({
+            sessionDate,
+            slotLabel,
+            rawText: struckText,
+            reason: "Part of this cell is struck through in the source sheet — that part treated as cancelled; the rest of the cell is still read",
+          });
+          if (cellSourceText.trim() === "") continue;
         }
 
-        if (NO_CLASS_MARKERS.has(cellText)) continue;
+        if (NO_CLASS_MARKERS.has(cellSourceText.replace(/\s+/g, " ").trim())) continue;
 
         const slot = group.slotTimes[colIndexInGroup];
-        let matchedSession = false;
+        const slotStartMin = hhmmToMinutes(slot.startTime);
+        // A class cell merged across several slots of the same section (e.g. G30:H30)
+        // runs until the last merged slot ends, unless it states its own time.
+        const mergedEndCol = Math.min(mergedEndColByAddr.get(cellAddr) ?? col, group.endCol);
+        const spanEndTime = group.slotTimes[mergedEndCol - group.startCol]?.endTime ?? slot.endTime;
 
-        const cohortMatch = cellText.match(COHORT_RE);
-        if (cohortMatch) {
-          const [, rawCode, cohortNumStr, sessionNumStr, labMarker, roomOverride] = cohortMatch;
-          const subjectCode = normalizeCode(rawCode);
-          const cohortNum = parseInt(cohortNumStr, 10);
-          const sheetSessionNum = parseInt(sessionNumStr, 10);
-          sessions.push({
-            subjectCode,
-            rawCode: rawCode.trim(),
-            sectionLabel: group.label,
-            sessionNumber: cohortNum * COHORT_NUMBER_MULTIPLIER + sheetSessionNum,
-            room: roomOverride?.trim() || group.room,
-            sessionDate,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            sessionLabel: `${rawCode.trim()} Cohort ${cohortNum}, Session ${sheetSessionNum}${labMarker ? " (LAB)" : ""}`,
-          });
-          matchedSession = true;
-        }
-
-        if (!matchedSession) {
-          const numberedMatch = cellText.match(NUMBERED_RE);
-          if (numberedMatch) {
-            const [, rawCode, sessionNumStr] = numberedMatch;
-            sessions.push({
-              subjectCode: normalizeCode(rawCode),
-              rawCode: rawCode.trim(),
-              sectionLabel: group.label,
-              sessionNumber: parseInt(sessionNumStr, 10),
-              room: group.room,
-              sessionDate,
-              startTime: slot.startTime,
-              endTime: slot.endTime,
-              sessionLabel: null,
-            });
-            matchedSession = true;
+        // Each line of the cell is read on its own (a class, a time, or anything else).
+        // A time line directly under a class sets that class's time. Every other line
+        // (event text, notes, and any time written under them) is collected as the
+        // remainder and sent to the event classifier, same as before.
+        //
+        // The WHOLE cell is tried as one class first, exactly as this parser always did
+        // -- some single classes are wrapped over several lines in the sheet ("Excel
+        // cohort - 2\nS - 1\n(CR-3A-01)", "Excel -\nLAB"), and splitting those into lines
+        // would break them apart. Only a cell that is NOT one class on its own is read
+        // line by line. (Confirmed against the Term-I tab: line-first reading turned
+        // "S - 1" into a fake subject "S".)
+        const classEntries: Array<{ match: ClassLineMatch; timeText: string | null }> = [];
+        const remainderLines: string[] = [];
+        const wholeCellMatch = matchClassLine(cellSourceText.replace(/\s+/g, " ").trim());
+        const lines = wholeCellMatch ? [] : classifyCellLines(cellSourceText);
+        if (wholeCellMatch) classEntries.push({ match: wholeCellMatch, timeText: null });
+        let previous: "class" | "time" | "other" | null = null;
+        for (const line of lines) {
+          if (line.kind === "class") {
+            classEntries.push({ match: line.match, timeText: line.timeText });
+            previous = "class";
+          } else if (line.kind === "time") {
+            const lastClass = classEntries[classEntries.length - 1];
+            if (previous === "class" && lastClass && lastClass.timeText === null) {
+              lastClass.timeText = line.text;
+            } else {
+              remainderLines.push(line.text);
+            }
+            previous = "time";
+          } else {
+            remainderLines.push(line.text);
+            previous = "other";
           }
         }
 
-        if (!matchedSession) {
-          const bareMatch = cellText.match(BARE_CODE_RE);
-          if (bareMatch && UNNUMBERED_SUBJECT_CODES.has(normalizeCode(bareMatch[1]))) {
-            const [, rawCode, labMarker] = bareMatch;
-            sessions.push({
-              subjectCode: normalizeCode(rawCode),
-              rawCode: rawCode.trim(),
-              sectionLabel: group.label,
-              sessionNumber: unnumberedSessionNumber(sessionDate, group.label, colIndexInGroup),
-              room: group.room,
-              sessionDate,
-              startTime: slot.startTime,
-              endTime: slot.endTime,
-              sessionLabel: labMarker ? `${rawCode.trim()} - LAB` : rawCode.trim(),
-            });
-            matchedSession = true;
-          }
-        }
-
-        // The peeled-off remainder (see extraEventText above) always gets routed to
-        // `unmapped` on its own -- independent of whether the first line matched a
-        // session -- so it reaches the event classifier with its OWN clean text
-        // ("SM-7 Guest Session 6:30 - 8:00 PM (Auditorium)"), identical to every
-        // other section's plain cell, so it de-dupes into the same single event
-        // instead of a second, differently-worded one.
-        if (extraEventText) {
+        if (classEntries.length === 0) {
+          // Not a class at all -- Quiz/Tutorial/Briefing/holiday/administrative text.
+          // Routed to `unmapped`, same as MBA2's parser; extractEventsFromUnmapped
+          // (lib/parseEvents.ts, unchanged) picks up whatever it recognizes (Quiz,
+          // Tutorial, Additional Session, named holidays) downstream in the sync route.
+          // Anything it doesn't recognize stays visible in the sync's own `unmapped`
+          // response for manual review, not silently lost. The raw newlines are kept,
+          // exactly as before, unless part of the cell was struck out.
           unmapped.push({
             sessionDate,
             slotLabel,
-            rawText: extraEventText,
-            reason: "Remainder of a multi-line cell after its first line was read as a class session — routed through the event classifier.",
+            rawText: cellSourceText === rawCellText ? rawCellText : cellSourceText.trim(),
+            reason: "Did not match a known class-code pattern ('{code} {n}', a Cohort entry, or a bare unnumbered code) — likely an exam/quiz/tutorial/briefing/holiday one-off. Routed through the event classifier next.",
           });
+          continue;
         }
 
-        if (matchedSession) continue;
-
-        // Anything else -- Quiz/Tutorial/Briefing/Master Class/holiday/administrative
-        // text -- isn't a class at all. Routed to `unmapped`, same as MBA2's parser;
-        // extractEventsFromUnmapped (lib/parseEvents.ts, unchanged) picks up whatever
-        // it already recognizes (Quiz, Tutorial, Additional Session, named holidays)
-        // downstream in the sync route. Anything it doesn't recognize either (e.g.
-        // "Briefing Session", "Master Class", "Paper Showing" -- none of these are in
-        // parseEvents.ts's keyword lists yet) stays visible in the sync's own
-        // `unmapped` response for manual review, not silently lost.
-        //
-        // Only reachable when extraEventText is null (matchedSession is always true
-        // whenever a split happened -- see above), so rawCellText and cellText cover
-        // the same content here; rawCellText is used to keep this unmapped entry's
-        // raw newlines intact for the sync response's own debug/review output,
-        // unchanged from this function's original behavior.
-        unmapped.push({
-          sessionDate,
-          slotLabel,
-          rawText: rawCellText,
-          reason: "Did not match a known class-code pattern ('{code} {n}', a Cohort entry, or a bare unnumbered code) — likely an exam/quiz/tutorial/briefing/holiday one-off. Routed through the event classifier next.",
+        classEntries.forEach((entry, entryIndex) => {
+          const explicit = entry.timeText ? parseCellTimeRange(entry.timeText, slotStartMin) : null;
+          const startTime = explicit?.startTime ?? slot.startTime;
+          const endTime = explicit?.endTime ?? spanEndTime;
+          const m = entry.match;
+          if (m.kind === "cohort") {
+            sessions.push({
+              subjectCode: normalizeCode(m.rawCode),
+              rawCode: m.rawCode,
+              sectionLabel: group.label,
+              sessionNumber: m.cohortNum * COHORT_NUMBER_MULTIPLIER + m.sheetSessionNum,
+              room: m.roomOverride || group.room,
+              sessionDate,
+              startTime,
+              endTime,
+              sessionLabel: `${m.rawCode} Cohort ${m.cohortNum}, Session ${m.sheetSessionNum}${m.lab ? " (LAB)" : ""}`,
+            });
+          } else if (m.kind === "numbered") {
+            sessions.push({
+              subjectCode: normalizeCode(m.rawCode),
+              rawCode: m.rawCode,
+              sectionLabel: group.label,
+              sessionNumber: m.sessionNum,
+              room: group.room,
+              sessionDate,
+              startTime,
+              endTime,
+              sessionLabel: null,
+            });
+          } else {
+            sessions.push({
+              subjectCode: normalizeCode(m.rawCode),
+              rawCode: m.rawCode,
+              sectionLabel: group.label,
+              // The first bare class in a cell keeps exactly the number it always had;
+              // a second one in the same cell (not seen in real data so far) gets an
+              // offset so the two can never collide.
+              sessionNumber: unnumberedSessionNumber(sessionDate, group.label, colIndexInGroup) + entryIndex * 5,
+              room: group.room,
+              sessionDate,
+              startTime,
+              endTime,
+              sessionLabel: m.lab ? `${m.rawCode} - LAB` : m.rawCode,
+            });
+          }
         });
+
+        // The rest of a cell that also held a class (e.g. "WAC-6" + "SM-7 Guest
+        // Session 6:30 - 8:00 PM (Auditorium)") goes to the event classifier on its
+        // own, joined into one line -- so it de-dupes into the same single event as
+        // every other section's plain cell instead of a second, differently-worded one.
+        if (remainderLines.length > 0) {
+          unmapped.push({
+            sessionDate,
+            slotLabel,
+            rawText: remainderLines.join(" "),
+            reason: "Remainder of a multi-line cell after its class line(s) were read as class sessions — routed through the event classifier.",
+          });
+        }
       }
     }
   }
