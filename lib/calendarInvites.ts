@@ -480,7 +480,13 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
     const t = Date.parse(iso);
     return t >= now && t <= now + windowMs;
   };
-  const globallySilent = settings.silent_until !== null && Date.parse(settings.silent_until) > now;
+  // One-off quiet window shipped WITH the Oct 2026 "IM Quiz shown to everyone" fix: that
+  // fix removes a wrongly batch-wide event dated the next day, and without this the whole
+  // batch would get a "cancelled" email for a quiz they never had. Expires by itself at
+  // 9:00 PM IST on 21 Oct 2026 and does nothing after that (safe to delete any time later).
+  const FIX_QUIET_UNTIL = Date.parse('2026-10-21T15:30:00Z');
+  const globallySilent =
+    (settings.silent_until !== null && Date.parse(settings.silent_until) > now) || now < FIX_QUIET_UNTIL;
   const bulkApproved = settings.bulk_approved_until !== null && Date.parse(settings.bulk_approved_until) > now;
 
   const allOps: PlanOp[] = [];

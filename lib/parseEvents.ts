@@ -153,6 +153,7 @@ function stripLeadingNoise(text: string): string {
       .replace(/^\s*-?\s*\d{1,2}[.:]\d{2}\s*[ap]m\)?/i, "") // leftover time / range end, e.g. "-3:15pm)"
       .replace(/^\s*-{2,}/, "") // dash separators like "-------"
       .replace(/^\s*(and)\b/i, "") // connector word
+      .replace(/^\s*&/, "") // "&" joining two exams, e.g. "FT&IT End Term Exam => 2.30 pm & SL End Term Exam"
       .trim();
   } while (text !== prev);
   return text;
@@ -307,10 +308,24 @@ export function extractEventsFromUnmapped(unmapped: UnmappedEntry[]): {
       stillUnmapped.push(entry);
       continue;
     }
-    const extracted = extractEventsFromText(entry.rawText);
-    if (extracted.length === 0) {
-      stillUnmapped.push(entry);
-    } else {
+    // A cell can hold two unrelated items divided by a dash line (3+ dashes), e.g. Term V
+    // cell F42: "IMC-COIL Interaction from 12:30 pm - 1.00pm\n---\nIM Quiz from 2.30 pm"
+    // (MBA2's parser collapses the newlines, so it arrives as "... 1.00pm --- IM Quiz ...").
+    // Read each part on its own. Without this, everything before "Quiz" became the quiz's
+    // "subject" ("IMC-COIL Interaction from 12:30 pm - 1.00pm --- IM"), which matched no
+    // subject, so the quiz was stored subject-less and shown to the WHOLE batch.
+    const parts = entry.rawText
+      .split(/(?:^|\s)-{3,}(?=\s|$)/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    for (const part of parts.length > 0 ? parts : [entry.rawText]) {
+      const extracted = extractEventsFromText(part);
+      if (extracted.length === 0) {
+        // A part that isn't an event stays visible for manual review. A cell with no
+        // separator keeps its exact original text, as before.
+        stillUnmapped.push(parts.length > 1 ? { ...entry, rawText: part } : entry);
+        continue;
+      }
       for (const e of extracted) {
         events.push({
           eventDate: entry.sessionDate,

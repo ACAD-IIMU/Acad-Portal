@@ -305,7 +305,27 @@ export async function GET(req: Request) {
   // 5) Classify whatever didn't match a session pattern: quizzes, exams, tutorials, guest
   //    sessions, registration all get pulled out here; anything left over genuinely isn't
   //    an event (e.g. the MG joint-period notation) and stays in the final unmapped list.
-  const { events, stillUnmapped } = extractEventsFromUnmapped(unmapped);
+  const { events: extractedEvents, stillUnmapped } = extractEventsFromUnmapped(unmapped);
+
+  // Safety net: a quiz or exam names a subject, so if that subject can't be found it must
+  // NOT be stored subject-less -- a subject-less event is shown to (and invited for) the
+  // whole batch. That is exactly how "IM Quiz" reached every MBA2 student in Oct 2026.
+  // Such events are held back and listed in the response (unresolvedEventCodes) for a
+  // human to fix, instead of silently going batch-wide. Other event types keep their
+  // previous behaviour (e.g. Registration genuinely has no subject).
+  const resolveEventSubject = (code: string | null): string | null =>
+    code
+      ? subjectByNormCode.get(normalizeCode(code)) ??
+        subjectByNormCode.get(EVENT_CODE_ALIASES[normalizeCode(code)] ?? "") ??
+        null
+      : null;
+  const unresolvedEventCodes: string[] = [];
+  const events = extractedEvents.filter((e) => {
+    if (e.type === "other" || !e.subjectCodeRaw) return true;
+    if (resolveEventSubject(e.subjectCodeRaw)) return true;
+    unresolvedEventCodes.push(`${e.eventDate} ${e.label} (subject read as "${e.subjectCodeRaw}")`);
+    return false;
+  });
 
   const eventRowsToInsert: Array<{
     term: string;
@@ -327,11 +347,7 @@ export async function GET(req: Request) {
     location: e.location ?? null,
     // Reuses the same subject map already built for sessions above — no extra query needed.
     // Null is fine here (e.g. "Registration" has no subject); the column allows it.
-    subject_id: e.subjectCodeRaw
-      ? subjectByNormCode.get(normalizeCode(e.subjectCodeRaw)) ??
-        subjectByNormCode.get(EVENT_CODE_ALIASES[normalizeCode(e.subjectCodeRaw)] ?? "") ??
-        null
-      : null
+    subject_id: resolveEventSubject(e.subjectCodeRaw)
   }));
 
   // MBA1-only: End-Term exam week entries (see lib/parseGridTimetable.ts) never go
@@ -411,6 +427,9 @@ export async function GET(req: Request) {
     sessionsUpsertedOrUnchanged: upsertedCount,
     sessionsRemoved: deletedCount,
     unresolvedSubjectCodes: [...new Set(unresolvedSubjects)],
+    // Quizzes/exams whose subject couldn't be matched -- held back, not shown to anyone.
+    // Should be empty; anything here needs the sheet cell (or EVENT_CODE_ALIASES) fixed.
+    unresolvedEventCodes,
     skippedStrikethrough: skippedStrikethrough.length,
     eventsInserted: dedupedEventRows.length,
     unmapped: stillUnmapped.length,
