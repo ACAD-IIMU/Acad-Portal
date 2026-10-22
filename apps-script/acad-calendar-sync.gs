@@ -1,17 +1,25 @@
 /**
- * ACAD timetable → Google Calendar invites
- * ========================================
+ * ACAD timetable → Google Calendar
+ * ================================
  * Lives inside acad@iimu.ac.in (script.google.com), NOT in the portal.
  *
  * Every 5 minutes it:
- *   1. asks the portal "what should change on the calendar?"
+ *   1. asks the portal "what should change on the calendars?"
  *        (POST /api/calendar/invites/plan)
- *   2. creates / updates / removes those events on acad@'s calendar, with the students
- *      as guests — Google then shows each class on every guest's own calendar
- *   3. tells the portal what it did (POST /api/calendar/invites/ack)
+ *   2. carries it out:
+ *        - creates ACAD section calendars (a few per run) and shares each one read-only
+ *          with everyone at iimu.ac.in — without any sharing email
+ *        - creates / updates / removes class events on those section calendars
+ *          (no guests → no invitations, no Accept/Decline, no RSVP replies to acad@)
+ *        - keeps the old guest-invite events on acad@'s own calendar in step while
+ *          students move over, then removes them quietly
+ *   3. tells the portal what it did (POST /api/calendar/invites/ack) — the portal then
+ *      sends phone alerts for last-minute changes
+ *   4. asks the portal to add any missing section calendars to students' own Google
+ *      Calendars (POST /api/calendar/feeds/subscribe)
  *
- * The portal decides WHEN to email students (only last-minute changes); this script
- * just passes that choice on to Google ("sendUpdates": "all" or "none").
+ * The portal decides everything; this script just passes its choices on to Google.
+ * No class change ever emails students once section calendars are on.
  *
  * One-time setup (see apps-script/README.md for the click-by-click version):
  *   - Services (+) → add "Google Calendar API" (identifier: Calendar)
@@ -19,11 +27,12 @@
  *   - Run setupOnce() and approve the permissions
  *
  * Everything here is safe to run again: creating an event that already exists turns
- * into an update, removing one that is already gone counts as done.
+ * into an update, removing one that is already gone counts as done, and a section
+ * calendar is never created twice (its ID is remembered in Script properties).
  */
 
 var PORTAL_URL = 'https://acad-student-portal.vercel.app';
-var CALENDAR_ID = 'primary';               // acad@'s own calendar
+var CALENDAR_ID = 'primary';               // acad@'s own calendar (old guest invites)
 var TIME_BUDGET_MS = 4.5 * 60 * 1000;      // Apps Script stops runs at 6 minutes
 var PAUSE_BETWEEN_CALLS_MS = 150;          // be gentle with Google's rate limits
 var ALERT_EVERY_HOURS = 6;                 // don't email acad@ about the same problem more often
@@ -72,6 +81,14 @@ function runCalendarSync() {
       callPortal_('post', '/api/calendar/invites/ack', { results: results });
     }
 
+    // Add missing section calendars to students' own Google Calendars. A problem here
+    // never stops the calendar sync — it is simply retried in 5 minutes.
+    try {
+      callPortal_('post', '/api/calendar/feeds/subscribe', {});
+    } catch (e) {
+      Logger.log('Adding calendars to students failed (will retry): ' + e);
+    }
+
     var failed = results.filter(function (r) { return !r.ok; });
     if (failed.length > 0) {
       alertOnce_('failed', 'ACAD calendar sync: ' + failed.length + ' change(s) failed',
@@ -88,36 +105,40 @@ function runCalendarSync() {
   }
 }
 
-/** Carries out one create / update / delete and reports back. */
+/** Carries out one operation and reports back (everything the portal sent, minus the event body). */
 function applyOp_(op) {
-  var result = {
-    op: op.op, key: op.key, eventId: op.eventId, batchLabel: op.batchLabel, summary: op.summary,
-    sendUpdates: op.sendUpdates, startAt: op.startAt, endAt: op.endAt, location: op.location,
-    contentHash: op.contentHash, attendeeHash: op.attendeeHash, reason: op.reason,
-    ok: false, error: null
-  };
-  var args = { sendUpdates: op.sendUpdates };
+  var result = {};
+  for (var k in op) {
+    if (op.hasOwnProperty(k) && k !== 'resource') result[k] = op[k];
+  }
+  result.ok = false;
+  result.error = null;
+
+  var calendarId = op.calendarId || CALENDAR_ID;
+  var args = { sendUpdates: op.sendUpdates || 'none' };
 
   try {
-    if (op.op === 'create') {
+    if (op.op === 'createCalendar') {
+      result.createdCalendarId = createSectionCalendar_(op);
+    } else if (op.op === 'create') {
       try {
-        Calendar.Events.insert(op.resource, CALENDAR_ID, args);
+        Calendar.Events.insert(op.resource, calendarId, args);
       } catch (e) {
         if (!isAlreadyExists_(e)) throw e;
         // Same ID used before (e.g. a class that was cancelled and then put back):
         // bring the old event back to life with the new details.
-        Calendar.Events.update(op.resource, CALENDAR_ID, op.eventId, args);
+        Calendar.Events.update(op.resource, calendarId, op.eventId, args);
       }
     } else if (op.op === 'update') {
       try {
-        Calendar.Events.update(op.resource, CALENDAR_ID, op.eventId, args);
+        Calendar.Events.update(op.resource, calendarId, op.eventId, args);
       } catch (e) {
         if (!isNotFound_(e)) throw e;
-        Calendar.Events.insert(op.resource, CALENDAR_ID, args); // someone deleted it by hand
+        Calendar.Events.insert(op.resource, calendarId, args); // someone deleted it by hand
       }
     } else if (op.op === 'delete') {
       try {
-        removeEvent_(op.eventId, args);
+        removeEvent_(calendarId, op.eventId, args);
       } catch (e) {
         if (!isNotFound_(e)) throw e; // already gone = done
       }
@@ -131,10 +152,46 @@ function applyOp_(op) {
   return result;
 }
 
+/**
+ * Creates one ACAD section calendar (once — its ID is remembered, so a retry never makes a
+ * second copy) and shares it read-only with the whole iimu.ac.in domain. One sharing rule
+ * per calendar, with sharing emails switched off.
+ */
+function createSectionCalendar_(op) {
+  var props = PropertiesService.getScriptProperties();
+  var propKey = 'FEED_' + String(op.key).replace(/^feed:/, '');
+  var calendarId = props.getProperty(propKey);
+
+  if (calendarId) {
+    try {
+      Calendar.Calendars.get(calendarId);
+    } catch (e) {
+      if (!isNotFound_(e)) throw e;
+      calendarId = null; // deleted by hand — make a fresh one
+    }
+  }
+  if (!calendarId) {
+    var created = Calendar.Calendars.insert(op.resource);
+    calendarId = created.id;
+    props.setProperty(propKey, calendarId);
+  }
+
+  try {
+    Calendar.Acl.insert(
+      { role: 'reader', scope: { type: 'domain', value: op.shareDomain || 'iimu.ac.in' } },
+      calendarId,
+      { sendNotifications: false }
+    );
+  } catch (e) {
+    if (!isAlreadyExists_(e)) throw e;
+  }
+  return calendarId;
+}
+
 // The advanced service names "delete" as "remove" (delete is a reserved word in JS).
-function removeEvent_(eventId, args) {
+function removeEvent_(calendarId, eventId, args) {
   var fn = Calendar.Events.remove || Calendar.Events['delete'];
-  return fn.call(Calendar.Events, CALENDAR_ID, eventId, args);
+  return fn.call(Calendar.Events, calendarId, eventId, args);
 }
 
 function errorCode_(e) {

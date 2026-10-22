@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { buildPlan } from '@/lib/calendarInvites';
 
 // Asked by the Apps Script inside acad@iimu.ac.in every 5 minutes:
-// "what should I create, change or remove on the calendar?"
+// "what should I create, change or remove on the calendars?"
 //
 //   POST  → the real plan (Apps Script). Records that a run happened.
 //   GET   → a read-only preview for humans: counts and a sample, no student emails,
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   try {
     const plan = await buildPlan(createAdminClient(), { preview: true });
     return NextResponse.json({
-      note: 'Preview only — nothing was changed. Emails are never listed here.',
+      note: 'Preview only — nothing was changed. Student emails are never listed here.',
       paused: plan.paused,
       held: plan.held,
       reason: plan.reason,
@@ -49,10 +49,13 @@ export async function GET(req: Request) {
       sample: plan.ops.slice(0, 25).map((op) => ({
         action: op.op,
         title: op.summary,
-        starts: op.startAt,
+        calendar: op.op === 'createCalendar' ? '(new section calendar)' : op.calendarId === 'primary' ? 'acad@ (old guest invite)' : 'section calendar',
+        starts: op.op === 'createCalendar' ? null : op.startAt,
         room: op.location,
         guests: Array.isArray((op.resource as any)?.attendees) ? (op.resource as any).attendees.length : null,
         emailsStudents: op.sendUpdates === 'all',
+        phoneAlerts: op.notify ? op.notify.studentIds.length : 0,
+        alertText: op.notify ? `${op.notify.title} — ${op.notify.body}` : null,
         why: op.reason
       }))
     });

@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { STORED_SCOPES } from '@/lib/googleScopes';
+import { subscribeStudent } from '@/lib/calendarFeeds';
+
+// Room for the one-time "add your section calendars" step below.
+export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -67,11 +72,23 @@ export async function GET(request: NextRequest) {
         refresh_token: providerRefreshToken,
         access_token: providerToken ?? null,
         expires_at: new Date(Date.now() + 3500 * 1000).toISOString(),
-        scope: 'https://www.googleapis.com/auth/calendar.events',
+        scope: STORED_SCOPES,
         updated_at: new Date().toISOString()
       });
       if (tokenError) {
         console.error('Failed to store google token (non-fatal):', tokenError);
+      } else {
+        // Add this student's ACAD section calendars to their Google Calendar right away.
+        // Never blocks sign-in: capped at 6 seconds, and anything left is finished by the
+        // background run within 5 minutes.
+        try {
+          await Promise.race([
+            subscribeStudent(admin, studentRow.id, 'self'),
+            new Promise((resolve) => setTimeout(resolve, 6000))
+          ]);
+        } catch (subscribeError) {
+          console.error('Adding section calendars at sign-in failed (non-fatal):', subscribeError);
+        }
       }
     }
 
