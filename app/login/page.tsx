@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { LOGIN_SCOPES } from '@/lib/googleScopes';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -59,9 +60,10 @@ export default function LoginPage() {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        // Calendar scope requested upfront at login (not incremental) — keeps the
-        // "Add to Google Calendar" button on Home a single click, no second consent screen.
-        scopes: 'openid email profile https://www.googleapis.com/auth/calendar.events',
+        // Calendar permissions requested upfront at login (not incremental). calendar.calendarlist
+        // is what lets the portal add the student's ACAD section calendars to their Google
+        // Calendar automatically — see lib/googleScopes.ts.
+        scopes: LOGIN_SCOPES,
         // We navigate ourselves (below) instead of letting supabase-js do
         // `location.href =`, so we can use `location.replace()` — that swaps this
         // /login entry out for Google's consent page in browser history instead

@@ -3,6 +3,7 @@ import Sidebar from '@/components/Sidebar';
 import TodaysClasses from './TodaysClasses';
 import Reminders from './Reminders';
 import QuickLinks from './QuickLinks';
+import ClassCalendarCard from './ClassCalendarCard';
 import MonthView from './MonthView';
 import { TERM_5 } from '@/lib/term5';
 import { TERM_2 } from '@/lib/term2';
@@ -203,6 +204,7 @@ export default async function HomePage() {
           todayDate={today}
         />
         <div className="flex flex-col gap-5">
+          <ClassCalendarCard />
           <QuickLinks />
           <Reminders
             events={upcomingEvents ?? []}

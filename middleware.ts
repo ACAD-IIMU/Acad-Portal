@@ -36,12 +36,14 @@ export async function middleware(request: NextRequest) {
   // a CRON_SECRET header) and manual testing via a ?secret= query param. Both
   // checks live inside that route itself; middleware must let the request
   // through to it rather than redirecting to /login first.
-  // /api/calendar/invites is the same situation: it is called by the Apps Script inside
-  // acad@iimu.ac.in (no portal login), and checks CALENDAR_SYNC_SECRET itself.
+  // /api/calendar/invites and /api/calendar/feeds/subscribe are the same situation: they
+  // are called by the Apps Script inside acad@iimu.ac.in (no portal login), and check
+  // CALENDAR_SYNC_SECRET themselves.
   const isPublicPath = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/auth') ||
     request.nextUrl.pathname.startsWith('/api/sync-timetable') ||
-    request.nextUrl.pathname.startsWith('/api/calendar/invites');
+    request.nextUrl.pathname.startsWith('/api/calendar/invites') ||
+    request.nextUrl.pathname.startsWith('/api/calendar/feeds/subscribe');
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url));
@@ -63,7 +65,10 @@ export const config = {
   // image referenced on a page a logged-out user can see (e.g. the logo on
   // /login itself) gets redirected to /login instead of loading — exactly
   // the bug that broke the login-page logo.
+  // sw.js (the phone-alerts service worker) and manifest.webmanifest (lets students add
+  // the portal to their home screen, which iPhones need for alerts) must load without a
+  // login redirect too.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'
+    '/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'
   ]
 };
