@@ -8,7 +8,7 @@ import { runPersonalSync } from '@/lib/personalCalendar';
 // "what should I create, change or remove on the calendars?"
 //
 //   POST  → the real plan (Apps Script). Records that a run happened. Right after answering,
-//           keeps working in the background for ~45 s on direct mode (students' classes in
+//           keeps working in the background for ~3.5 min on direct mode (students' classes in
 //           their own main calendar — lib/personalCalendar.ts), so that never waits behind
 //           acad@'s own invite changes.
 //   GET   → a read-only preview for humans: counts and a sample, no student emails,
@@ -19,7 +19,13 @@ import { runPersonalSync } from '@/lib/personalCalendar';
 // "Authorization: Bearer <secret>" or as ?secret=<secret>.
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// 300 s = the Vercel Hobby maximum with Fluid compute (enabled for this project). The plan
+// itself answers in seconds; the rest is for direct mode in the background (see below).
+export const maxDuration = 300;
+
+// Direct mode stops writing after this long, so it is always finished well before acad@'s
+// next run (every 5 minutes) asks for a new plan — two runs never overlap.
+const DIRECT_WRITE_MS = 210_000;
 
 function isAuthorized(req: Request): boolean {
   const expected = process.env.CALENDAR_SYNC_SECRET;
@@ -76,7 +82,8 @@ export async function GET(req: Request) {
 
 async function directInBackground(admin: ReturnType<typeof createAdminClient>, started: number) {
   const end = getDeadline()?.getTime() ?? started + maxDuration * 1000;
-  const budget = end - Date.now() - 12_000; // leave time to save and finish cleanly
+  // Leave time to save and finish cleanly, and never run into the next 5-minute run.
+  const budget = Math.min(end - Date.now() - 20_000, started + DIRECT_WRITE_MS - Date.now());
   if (budget < 5_000) return;
   try {
     const result = await runPersonalSync(admin, budget);

@@ -48,7 +48,7 @@ The main calendar shows on every phone with no setup, so **students do nothing**
 
 - Code: `lib/personalCalendar.ts`, run every 5 minutes in the background of
   `/api/calendar/invites/plan` — the first thing the Apps Script calls each run — so it never
-  waits behind acad@'s own invite changes (no Apps Script change). ~45 s per run, 40 students
+  waits behind acad@'s own invite changes (no Apps Script change). ~3.5 min per run, 40 students
   at a time; each student's finished writes are saved immediately. Google's limits (600
   calls/min per student, 10,000/min per project) leave plenty of room.
 - A student keeps the old acad@ invites until every upcoming class is in their calendar
