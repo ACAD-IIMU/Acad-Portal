@@ -39,6 +39,23 @@ Calendar app.
   browser must ask the student. On iPhone the portal must first be added to the home screen
   (Share → Add to Home Screen) — the card explains this.
 
+## Direct mode (current design): classes straight into each student's main calendar
+
+Students found the section-calendar setup (Sync on Android, confirm button) a burden. In
+direct mode the portal writes each student's classes **straight into their own main Google
+Calendar**, using the Google permission they already gave when they signed in to the portal.
+The main calendar shows on every phone with no setup, so **students do nothing**.
+
+- Code: `lib/personalCalendar.ts`, run every 5 minutes from `/api/calendar/feeds/subscribe`
+  (called by the existing Apps Script — no Apps Script change).
+- A student keeps the old acad@ invites until every upcoming class is in their calendar
+  (`students.personal_ready_at`), then the invites and any ACAD section calendars are removed.
+- No guests → no emails, no Yes/No buttons. Phone alerts still come from the main sync.
+- Permission broken (revoked / unused 6 months) → automatically back on invites until they
+  sign in again. Students who never signed in to the portal stay on invites.
+- SQL: `supabase/direct-calendar/step1_tables.sql` (before merging), `step2_pilot.sql`
+  (Thilak only), `step3_everyone.sql`, `check_progress.sql`, `control_switch_off.sql` (undo).
+
 ## Android: added calendars need "Sync" turned on
 
 Adding a calendar to a student's Google account (what the portal does) makes it appear on the

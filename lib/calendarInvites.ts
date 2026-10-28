@@ -73,9 +73,9 @@ const FEED_GROUPING: Record<string, 'section' | 'class'> = {
 // with one sharing rule per calendar (not one per student — Google limits mass sharing).
 export const SHARE_DOMAIN = 'iimu.ac.in';
 
-const TIME_ZONE = 'Asia/Kolkata';
+export const TIME_ZONE = 'Asia/Kolkata';
 const IST_OFFSET = '+05:30';
-const PORTAL_URL = 'https://acad-student-portal.vercel.app';
+export const PORTAL_URL = 'https://acad-student-portal.vercel.app';
 const ORGANIZER_EMAIL = (process.env.ACAD_ORGANIZER_EMAIL ?? 'acad@iimu.ac.in').toLowerCase();
 
 // Old guest invites: Google allows at most 200 directly invited guests per event.
@@ -141,17 +141,26 @@ export type Settings = {
   push_enabled: boolean;
   max_new_calendars_per_run: number;
   max_new_calendars_per_day: number;
+  // Direct mode: classes written straight into each student's own main calendar (see
+  // lib/personalCalendar.ts). personal_pilot_reg_nos = null means everyone.
+  personal_enabled: boolean;
+  personal_pilot_reg_nos: string[] | null;
+  personal_max_ops_per_run: number;
 };
 
 const SETTING_DEFAULTS: Pick<
   Settings,
-  'feeds_enabled' | 'legacy_guests_enabled' | 'push_enabled' | 'max_new_calendars_per_run' | 'max_new_calendars_per_day'
+  | 'feeds_enabled' | 'legacy_guests_enabled' | 'push_enabled' | 'max_new_calendars_per_run' | 'max_new_calendars_per_day'
+  | 'personal_enabled' | 'personal_pilot_reg_nos' | 'personal_max_ops_per_run'
 > = {
   feeds_enabled: false,
   legacy_guests_enabled: true,
   push_enabled: true,
   max_new_calendars_per_run: 3,
-  max_new_calendars_per_day: 40
+  max_new_calendars_per_day: 40,
+  personal_enabled: false,
+  personal_pilot_reg_nos: null,
+  personal_max_ops_per_run: 900
 };
 
 export type BatchStats = {
@@ -164,6 +173,7 @@ export type BatchStats = {
   waitingForCalendar: number;
   studentsMoved: number;
   studentsAwaitingConfirm: number; // calendars added, but not yet confirmed visible on their phone
+  studentsInDirectMode: number; // classes copied straight into their own main calendar
   studentsOnOldInvites: number;
   // old guest invites
   oldInviteEvents: number;
@@ -211,7 +221,7 @@ type LedgerRow = {
 
 // ---------- small helpers ----------
 
-const sha1 = (s: string) => createHash('sha1').update(s).digest('hex');
+export const sha1 = (s: string) => createHash('sha1').update(s).digest('hex');
 
 // Google event IDs allow only a–v and 0–9. 'acad' + 's'/'e'/'f' + hex digits all qualify,
 // and the prefix can never collide with the old button's 'sess…'/'evt…' IDs.
@@ -223,7 +233,7 @@ function istToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: TIME_ZONE }); // YYYY-MM-DD
 }
 
-function istDateOf(iso: string): string {
+export function istDateOf(iso: string): string {
   return new Date(iso).toLocaleDateString('en-CA', { timeZone: TIME_ZONE });
 }
 
@@ -260,7 +270,7 @@ function nextDay(dateStr: string): string {
   return addMinutes(dateStr, '00:00', 24 * 60).date;
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
+export function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
@@ -486,7 +496,7 @@ export function buildFeeds(data: BatchData): FeedModel {
 
 // ---------- what a class / event looks like on the calendar ----------
 
-type Timing = {
+export type Timing = {
   start: Record<string, string>;
   end: Record<string, string>;
   startAt: string; // ISO with +05:30
@@ -494,7 +504,7 @@ type Timing = {
   allDay: boolean;
 };
 
-type ClassEntry = {
+export type ClassEntry = {
   origin: string; // stable identity of the timetable entry (shared by every calendar copy)
   summary: string;
   descriptionLines: string[];
@@ -546,7 +556,7 @@ function eventTiming(e: ImportantEventRow): { summary: string; timing: Timing } 
 }
 
 // Everything on the timetable from today on, once, with who it is for.
-function buildClassEntries(data: BatchData, model: FeedModel): { entries: ClassEntry[]; classesWithNoStudents: number } {
+export function buildClassEntries(data: BatchData, model: FeedModel): { entries: ClassEntry[]; classesWithNoStudents: number } {
   const { batchLabel, term } = data;
   const now = Date.now();
   const entries: ClassEntry[] = [];
@@ -635,14 +645,14 @@ function buildClassEntries(data: BatchData, model: FeedModel): { entries: ClassE
   return { entries, classesWithNoStudents };
 }
 
-const FEED_NOTE =
+export const FEED_NOTE =
   'From the official ACAD timetable. This updates by itself if the class is moved, changes room or is cancelled.';
 const GUEST_NOTE =
   'Added by ACAD from the official timetable. This invite updates by itself if the class is moved, ' +
   'cancelled or changes room — please keep it (don’t decline or delete it).';
 
 // Same layout as before this change, so existing guest events don't all look "changed".
-const describe = (lines: string[], note: string) => [...lines, '', note, PORTAL_URL].join('\n');
+export const describe = (lines: string[], note: string) => [...lines, '', note, PORTAL_URL].join('\n');
 
 // --- section-calendar events ---
 
@@ -862,6 +872,30 @@ export async function confirmedStudents(admin: SupabaseClient, batchLabel: strin
   return new Set(rows.map((r) => r.id));
 }
 
+// Students whose classes are fully copied into their own main calendar and whose Google
+// permission still works. Tolerates the columns not existing yet (step7_direct.sql).
+export async function personalReadyStudents(admin: SupabaseClient, batchLabel: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin
+      .from('students')
+      .select('id, google_tokens(events_error)')
+      .eq('batch_label', batchLabel)
+      .not('personal_ready_at', 'is', null)
+      .range(from, from + 999);
+    if (error) {
+      console.warn('personal_ready_at not readable (run step7_direct.sql):', error.message);
+      return new Set();
+    }
+    for (const r of (data ?? []) as { id: string; google_tokens: { events_error: string | null } | { events_error: string | null }[] | null }[]) {
+      const t = Array.isArray(r.google_tokens) ? r.google_tokens[0] : r.google_tokens;
+      if (t && !t.events_error) ids.add(r.id);
+    }
+    if (!data || data.length < 1000) break;
+  }
+  return ids;
+}
+
 // ---------- settings ----------
 
 export async function readSettings(admin: SupabaseClient): Promise<Settings> {
@@ -881,7 +915,7 @@ export async function readSettings(admin: SupabaseClient): Promise<Settings> {
 
 const emptyStats = (term: string, grouping: 'section' | 'class'): BatchStats => ({
   term, grouping, sectionCalendars: 0, calendarsStillToCreate: 0, sectionEvents: 0, waitingForCalendar: 0,
-  studentsMoved: 0, studentsAwaitingConfirm: 0, studentsOnOldInvites: 0, oldInviteEvents: 0, oldInvitesToRemove: 0, creates: 0, updates: 0,
+  studentsMoved: 0, studentsAwaitingConfirm: 0, studentsInDirectMode: 0, studentsOnOldInvites: 0, oldInviteEvents: 0, oldInvitesToRemove: 0, creates: 0, updates: 0,
   materialUpdates: 0, cancelledKeptVisible: 0, deletes: 0, waitingToDelete: 0, emails: 0, pushAlerts: 0, silent: false,
   classesWithNoStudents: 0
 });
@@ -1118,12 +1152,20 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
       // once they have also confirmed on the portal that they can see the ACAD calendars on
       // their phone. Until then they keep both (the invites are what their phone shows).
       const confirmed = await confirmedStudents(admin, batchLabel);
+      // Direct mode: a student whose classes are all copied into their own main calendar
+      // (no setup on their phone needed) also comes off the guest invites.
+      const personalReady = settings.personal_enabled ? await personalReadyStudents(admin, batchLabel) : new Set<string>();
       for (const [studentId, needed] of model.studentFeeds) {
+        if (personalReady.has(studentId)) {
+          moved.add(studentId);
+          continue;
+        }
         const has = subscribed.get(studentId);
         if (!(has && [...needed].every((k) => readyFeeds.has(k) && has.has(k)))) continue;
         if (confirmed.has(studentId)) moved.add(studentId);
         else s.studentsAwaitingConfirm++;
       }
+      s.studentsInDirectMode = personalReady.size;
       s.studentsMoved = moved.size;
       s.studentsOnOldInvites = model.studentFeeds.size - moved.size;
     }

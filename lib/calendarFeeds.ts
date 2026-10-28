@@ -23,6 +23,7 @@ import { google } from 'googleapis';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { BATCH_TERMS, buildFeeds, fetchAll, loadBatchData, readSettings } from '@/lib/calendarInvites';
 import { CALENDARLIST_SCOPE } from '@/lib/googleScopes';
+import { inDirectMode } from '@/lib/personalCalendar';
 
 const REMINDER_MINUTES = 15;
 const PARALLEL_STUDENTS = 4;
@@ -201,6 +202,14 @@ async function studentBatch(admin: SupabaseClient, studentId: string): Promise<s
   return (data?.batch_label as string | undefined) ?? null;
 }
 
+// Students whose classes go straight into their main calendar (lib/personalCalendar.ts) don't
+// get the ACAD section calendars added.
+async function isDirect(admin: SupabaseClient, settings: Awaited<ReturnType<typeof readSettings>>, studentId: string) {
+  if (!settings.personal_enabled) return false;
+  const { data } = await admin.from('students').select('reg_no').eq('id', studentId).maybeSingle();
+  return inDirectMode(settings, (data?.reg_no as string | null | undefined) ?? null);
+}
+
 export async function getStudentCalendarStatus(admin: SupabaseClient, studentId: string): Promise<StudentCalendarStatus> {
   const settings = await readSettings(admin);
   const batchLabel = await studentBatch(admin, studentId);
@@ -254,6 +263,7 @@ export async function subscribeStudent(
   if (!settings.feeds_enabled || !batchLabel || !BATCH_TERMS[batchLabel] || !settings.enabled_batches.includes(batchLabel)) {
     return { added: 0, needsPermission: false, error: null };
   }
+  if (await isDirect(admin, settings, studentId)) return { added: 0, needsPermission: false, error: null };
   const { data: token } = await admin.from('google_tokens').select(TOKEN_COLUMNS).eq('student_id', studentId).maybeSingle();
   if (!tokenUsable(token as TokenRow | null)) return { added: 0, needsPermission: true, error: null };
 
@@ -279,11 +289,20 @@ export async function runAutoSubscribe(admin: SupabaseClient, budgetMs: number) 
   );
   const tokenById = new Map(tokens.filter((t) => tokenUsable(t)).map((t) => [t.student_id, t]));
 
+  let direct = new Set<string>();
+  if (settings.personal_enabled) {
+    const rows = await fetchAll<{ id: string; reg_no: string | null }>((from, to) =>
+      admin.from('students').select('id, reg_no').range(from, to)
+    );
+    direct = new Set(rows.filter((r) => inDirectMode(settings, r.reg_no)).map((r) => r.id));
+  }
+
   const queue: { token: TokenRow; todo: Todo[] }[] = [];
   for (const batchLabel of settings.enabled_batches) {
     if (!BATCH_TERMS[batchLabel]) continue;
     const state = await batchFeedState(admin, batchLabel);
     for (const studentId of state.model.studentFeeds.keys()) {
+      if (direct.has(studentId)) continue;
       const token = tokenById.get(studentId);
       if (!token) continue;
       const todo = state.todoFor(studentId);

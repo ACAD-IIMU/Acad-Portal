@@ -73,7 +73,12 @@ export async function GET(request: NextRequest) {
         access_token: providerToken ?? null,
         expires_at: new Date(Date.now() + 3500 * 1000).toISOString(),
         scope: STORED_SCOPES,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        // A fresh sign-in means fresh permission: clear any earlier "permission broken" flags.
+        events_error: null,
+        events_error_at: null,
+        calendarlist_error: null,
+        calendarlist_error_at: null
       });
       if (tokenError) {
         console.error('Failed to store google token (non-fatal):', tokenError);
