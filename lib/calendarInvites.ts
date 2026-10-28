@@ -15,8 +15,10 @@
 //
 // 2. OLD GUEST INVITES (the original design: one event on acad@'s own calendar per class,
 //    with the students as guests). Kept only as a bridge: a student stays on the old guest
-//    invites until they have ALL of their section calendars and those calendars are fully
-//    filled in, then they are quietly removed from the guest lists. So nobody ever loses a
+//    invites until they have ALL of their section calendars, those calendars are fully
+//    filled in, AND they have confirmed on the portal that the calendars show on their phone
+//    (Android's Calendar app only shows an added calendar once "Sync" is turned on for it).
+//    Then they are quietly removed from the guest lists. So nobody ever loses a
 //    class or sees one twice during the move. Guest invites no longer email anyone either:
 //    every change is sent with notifications off, and last-minute ones alert phones.
 //
@@ -161,6 +163,7 @@ export type BatchStats = {
   sectionEvents: number;
   waitingForCalendar: number;
   studentsMoved: number;
+  studentsAwaitingConfirm: number; // calendars added, but not yet confirmed visible on their phone
   studentsOnOldInvites: number;
   // old guest invites
   oldInviteEvents: number;
@@ -837,6 +840,28 @@ function noteFor(
   return { tag, title: `Changed: ${summary}`, body: [when, place].filter(Boolean).join(' · ') };
 }
 
+// Students who confirmed on the portal that the ACAD calendars show on their phone.
+// Tolerates the column not existing yet (supabase/calendar-feeds/step6_confirm.sql), in which
+// case nobody counts as confirmed and everyone simply keeps their guest invites.
+export async function confirmedStudents(admin: SupabaseClient, batchLabel: string): Promise<Set<string>> {
+  const rows: { id: string }[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin
+      .from('students')
+      .select('id')
+      .eq('batch_label', batchLabel)
+      .not('calendar_confirmed_at', 'is', null)
+      .range(from, from + 999);
+    if (error) {
+      console.warn('calendar_confirmed_at not readable (run step6_confirm.sql):', error.message);
+      return new Set();
+    }
+    rows.push(...((data ?? []) as { id: string }[]));
+    if (!data || data.length < 1000) break;
+  }
+  return new Set(rows.map((r) => r.id));
+}
+
 // ---------- settings ----------
 
 export async function readSettings(admin: SupabaseClient): Promise<Settings> {
@@ -856,7 +881,7 @@ export async function readSettings(admin: SupabaseClient): Promise<Settings> {
 
 const emptyStats = (term: string, grouping: 'section' | 'class'): BatchStats => ({
   term, grouping, sectionCalendars: 0, calendarsStillToCreate: 0, sectionEvents: 0, waitingForCalendar: 0,
-  studentsMoved: 0, studentsOnOldInvites: 0, oldInviteEvents: 0, oldInvitesToRemove: 0, creates: 0, updates: 0,
+  studentsMoved: 0, studentsAwaitingConfirm: 0, studentsOnOldInvites: 0, oldInviteEvents: 0, oldInvitesToRemove: 0, creates: 0, updates: 0,
   materialUpdates: 0, cancelledKeptVisible: 0, deletes: 0, waitingToDelete: 0, emails: 0, pushAlerts: 0, silent: false,
   classesWithNoStudents: 0
 });
@@ -1087,9 +1112,17 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
         if (!subscribed.has(r.student_id)) subscribed.set(r.student_id, new Set());
         subscribed.get(r.student_id)!.add(r.feed_key);
       }
+      // Android's Google Calendar app does not sync a newly added calendar until the student
+      // turns "Sync" on for it in the app's settings, so "added to their list" is not the same
+      // as "visible on their phone". A student therefore only comes off the old guest invites
+      // once they have also confirmed on the portal that they can see the ACAD calendars on
+      // their phone. Until then they keep both (the invites are what their phone shows).
+      const confirmed = await confirmedStudents(admin, batchLabel);
       for (const [studentId, needed] of model.studentFeeds) {
         const has = subscribed.get(studentId);
-        if (has && [...needed].every((k) => readyFeeds.has(k) && has.has(k))) moved.add(studentId);
+        if (!(has && [...needed].every((k) => readyFeeds.has(k) && has.has(k)))) continue;
+        if (confirmed.has(studentId)) moved.add(studentId);
+        else s.studentsAwaitingConfirm++;
       }
       s.studentsMoved = moved.size;
       s.studentsOnOldInvites = model.studentFeeds.size - moved.size;
@@ -1113,6 +1146,9 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
     };
     const { events: desiredGuests, keysForEveryone } = buildDesiredGuestEvents(entries, includeEmail);
     const guestLedgerByKey = new Map(guestLedger.map((r) => [r.key, r]));
+    // Classes already on a section calendar. A guest invite created for one of these is a
+    // student being put back on the invites (not a new class), so it must not say "New".
+    const onSectionCalendar = new Set(feedLedger.map((r) => r.origin).filter((o): o is string => !!o));
     s.oldInviteEvents = guestLedger.filter((r) => Date.parse(r.start_at) >= now).length;
     // First load for a batch (nothing on the calendar yet) is always silent.
     const guestSilent = globallySilent || ledger.length === 0;
@@ -1138,8 +1174,9 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
       };
       if (!l) {
         s.creates++;
-        const op: PlanOp = { ...common, op: 'create', sendUpdates: 'none', reason: 'new on the timetable' };
-        if (pushIf(within(d.startAt))) op.notify = { ...noteFor('new', d.origin, d.summary, d.allDay, d), studentIds: idsOf(d.guestEmails) };
+        const isNewClass = !onSectionCalendar.has(d.origin);
+        const op: PlanOp = { ...common, op: 'create', sendUpdates: 'none', reason: isNewClass ? 'new on the timetable' : 'students back on invites' };
+        if (isNewClass && pushIf(within(d.startAt))) op.notify = { ...noteFor('new', d.origin, d.summary, d.allDay, d), studentIds: idsOf(d.guestEmails) };
         push(op);
         continue;
       }
