@@ -19,9 +19,11 @@
 //   - Phone alerts are NOT sent from here — lib/calendarInvites.ts already alerts every
 //     student of a changed class (this module only keeps calendars in step).
 //
-// Runs inside POST /api/calendar/feeds/subscribe, which the Apps Script in acad@ calls every
-// 5 minutes — so no Apps Script change is needed. Each run works for ~35 seconds and picks up
-// where the last one stopped.
+// Runs in the background of POST /api/calendar/invites/plan, which the Apps Script in acad@
+// calls at the START of every run (every 5 minutes) — so it never waits behind acad@'s own
+// invite changes. Each run works for ~45 seconds, ~40 students at a time, and picks up where
+// the last one stopped. Every student's finished writes are saved straight away, so nothing is
+// redone if a run is cut short.
 
 import { google, calendar_v3 } from 'googleapis';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -45,7 +47,10 @@ import {
 const DELETE_GRACE_MS = 8 * 60 * 1000; // same grace as the section calendars
 const NOTIFY_WINDOW_MS = 48 * 60 * 60 * 1000; // a cancellation this close stays visible, marked
 const OFF_DELAY_MS = 90 * 60 * 1000; // wait for invites to come back before removing copies
-const PARALLEL_STUDENTS = 12;
+const PARALLEL_STUDENTS = 40; // Google allows 600 calls/min per student and 10,000/min per project
+const MIN_OPS_PER_RUN = PARALLEL_STUDENTS * 150; // enough work queued for every parallel slot
+const FEED_REMOVAL_MS = 8_000; // time given to taking ACAD calendars out of ready students' lists
+const PARALLEL_FEED_REMOVALS = 20;
 
 type TokenRow = {
   student_id: string;
@@ -228,9 +233,7 @@ export async function runPersonalSync(
         .map((st) => st.id)
     );
 
-    const ledger = await fetchAll<LedgerRow>((from, to) =>
-      admin.from('calendar_personal_ledger').select('*').eq('batch_label', batchLabel).range(from, to)
-    );
+    const ledger = await loadLedger(admin, batchLabel);
     for (const l of ledger) hasCopies.add(l.student_id);
     if (eligible.size === 0 && ledger.length === 0) continue;
 
@@ -327,8 +330,14 @@ export async function runPersonalSync(
     (a.kind === 'create' ? a.studentId.localeCompare(b.studentId) : 0) ||
     Date.parse(a.row?.start_at ?? '0') - Date.parse(b.row?.start_at ?? '0')
   );
-  const capped = ops.slice(0, settings.personal_max_ops_per_run);
+  const capped = ops.slice(0, Math.max(settings.personal_max_ops_per_run, MIN_OPS_PER_RUN));
   result.left = ops.length - capped.length;
+
+  // First, students already fully moved: take the ACAD section calendars out of their list so
+  // they don't see classes twice (short, capped — the writes below matter more).
+  result.feedsRemoved = await removeSectionCalendars(
+    admin, tokenById, studentRows, settings, Math.min(deadline, Date.now() + FEED_REMOVAL_MS), calendarFor
+  );
 
   // Group by student; students run in parallel, each student's writes one after another.
   const byStudent = new Map<string, Op[]>();
@@ -337,20 +346,31 @@ export async function runPersonalSync(
     byStudent.get(op.studentId)!.push(op);
   }
   const queue = [...byStudent.entries()];
-  const ledgerUpserts: Record<string, unknown>[] = [];
-  const ledgerDeletes: { student_id: string; origin: string }[] = [];
   const createdCount = new Map<string, number>();
   const tokenBroken = new Set<string>();
-  let rateLimited = false;
+
+  // Saves one student's finished writes right away, so a run that is cut short loses nothing.
+  const save = async (upserts: Record<string, unknown>[], deletes: string[], studentId: string) => {
+    for (const rows of chunk(upserts, 200)) {
+      const { error } = await admin.from('calendar_personal_ledger').upsert(rows, { onConflict: 'student_id,origin' });
+      if (error) console.error('calendar_personal_ledger upsert:', error.message);
+    }
+    for (const origins of chunk(deletes, 100)) {
+      await admin.from('calendar_personal_ledger').delete().eq('student_id', studentId).in('origin', origins);
+    }
+  };
 
   const runStudent = async (studentId: string, list: Op[]) => {
     const token = tokenById.get(studentId);
     if (!token) return;
     const cal = calendarFor(token);
-    for (const op of list) {
-      if (Date.now() > deadline || rateLimited) {
-        result.left++;
-        continue;
+    const upserts: Record<string, unknown>[] = [];
+    const deletes: string[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const op = list[i];
+      if (Date.now() > deadline) {
+        result.left += list.length - i;
+        break;
       }
       try {
         if (op.kind === 'create') {
@@ -362,7 +382,7 @@ export async function runPersonalSync(
             await cal.events.update({ calendarId: 'primary', eventId: op.eventId, sendUpdates: 'none', requestBody: op.resource! });
           }
           createdCount.set(studentId, (createdCount.get(studentId) ?? 0) + 1);
-          ledgerUpserts.push({ ...op.row!, missing_since: null, cancelled_at: null, updated_at: new Date().toISOString() });
+          upserts.push({ ...op.row!, missing_since: null, cancelled_at: null, updated_at: new Date().toISOString() });
         } else if (op.kind === 'update' || op.kind === 'cancel') {
           try {
             await cal.events.update({ calendarId: 'primary', eventId: op.eventId, sendUpdates: 'none', requestBody: op.resource! });
@@ -370,7 +390,7 @@ export async function runPersonalSync(
             if (classify(e) !== 'notFound') throw e;
             await cal.events.insert({ calendarId: 'primary', sendUpdates: 'none', requestBody: op.resource! }); // student deleted it
           }
-          ledgerUpserts.push({
+          upserts.push({
             ...op.row!,
             missing_since: null,
             cancelled_at: op.kind === 'cancel' ? new Date().toISOString() : null,
@@ -382,7 +402,7 @@ export async function runPersonalSync(
           } catch (e) {
             if (classify(e) !== 'notFound') throw e; // already gone = done
           }
-          ledgerDeletes.push({ student_id: studentId, origin: op.origin });
+          deletes.push(op.origin);
         }
         result.done++;
       } catch (e: any) {
@@ -390,13 +410,19 @@ export async function runPersonalSync(
         result.failed++;
         if (kind === 'token') {
           tokenBroken.add(studentId);
-          result.left += list.length - list.indexOf(op) - 1;
-          return; // every other write for this student would fail the same way
+          result.left += list.length - i - 1;
+          break; // every other write for this student would fail the same way
         }
-        if (kind === 'rate') rateLimited = true;
+        if (kind === 'rate') {
+          // Google asked this student's calendar to slow down: stop for this student only,
+          // the rest is picked up next run. Other students carry on.
+          result.left += list.length - i - 1;
+          break;
+        }
         console.error('direct calendar write failed:', op.kind, studentId, String(e?.message ?? e).slice(0, 200));
       }
     }
+    await save(upserts, deletes, studentId);
   };
 
   let next = 0;
@@ -408,14 +434,6 @@ export async function runPersonalSync(
       }
     })
   );
-
-  for (const rows of chunk(ledgerUpserts, 200)) {
-    const { error } = await admin.from('calendar_personal_ledger').upsert(rows, { onConflict: 'student_id,origin' });
-    if (error) throw new Error(`calendar_personal_ledger upsert: ${error.message}`);
-  }
-  for (const d of ledgerDeletes) {
-    await admin.from('calendar_personal_ledger').delete().eq('student_id', d.student_id).eq('origin', d.origin);
-  }
 
   // Broken permission → back to the invites straight away.
   for (const studentId of tokenBroken) {
@@ -440,12 +458,7 @@ export async function runPersonalSync(
     await admin.from('google_tokens').update({ events_error: null, events_error_at: null }).in('student_id', ids);
   }
   result.newlyReady = newlyReady.length;
-
-  // Students now fully in direct mode don't need the ACAD section calendars any more —
-  // take those out of their calendar list so they don't see classes twice.
-  if (Date.now() < deadline) {
-    result.feedsRemoved = await removeSectionCalendars(admin, tokenById, studentRows, settings, deadline, calendarFor, newlyReady);
-  }
+  // Their ACAD section calendars are taken out at the start of the next run.
   return result;
 }
 
@@ -455,31 +468,72 @@ async function removeSectionCalendars(
   studentRows: Map<string, StudentRow>,
   settings: { personal_enabled: boolean; personal_pilot_reg_nos: string[] | null },
   deadline: number,
-  calendarFor: CalendarFor,
-  newlyReady: string[]
+  calendarFor: CalendarFor
 ): Promise<number> {
   const subs = await fetchAll<{ student_id: string; feed_key: string; calendar_id: string }>((from, to) =>
     admin.from('calendar_feed_subscriptions').select('student_id, feed_key, calendar_id').range(from, to)
   );
-  const ready = new Set(newlyReady);
-  for (const [id, st] of studentRows) if (st.personal_ready_at) ready.add(id);
-  let removed = 0;
+  const byStudent = new Map<string, { feed_key: string; calendar_id: string }[]>();
   for (const s of subs) {
-    if (Date.now() > deadline) break;
     const st = studentRows.get(s.student_id);
-    if (!st || !ready.has(s.student_id) || !inDirectMode(settings, st.reg_no)) continue;
-    const token = tokenById.get(s.student_id);
-    if (!token?.refresh_token) continue;
-    try {
-      await calendarFor(token).calendarList.delete({ calendarId: s.calendar_id });
-    } catch (e) {
-      const kind = classify(e);
-      if (kind !== 'notFound' && kind !== 'token') continue; // try again next run
-    }
-    await admin.from('calendar_feed_subscriptions').delete().eq('student_id', s.student_id).eq('feed_key', s.feed_key);
-    removed++;
+    if (!st?.personal_ready_at || !inDirectMode(settings, st.reg_no)) continue;
+    if (!tokenById.get(s.student_id)?.refresh_token) continue;
+    if (!byStudent.has(s.student_id)) byStudent.set(s.student_id, []);
+    byStudent.get(s.student_id)!.push(s);
   }
+  const queue = [...byStudent.entries()];
+  let removed = 0;
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: PARALLEL_FEED_REMOVALS }, async () => {
+      while (next < queue.length && Date.now() < deadline) {
+        const [studentId, list] = queue[next++];
+        const cal = calendarFor(tokenById.get(studentId)!);
+        for (const s of list) {
+          if (Date.now() > deadline) break;
+          try {
+            await cal.calendarList.delete({ calendarId: s.calendar_id });
+          } catch (e) {
+            const kind = classify(e);
+            if (kind !== 'notFound' && kind !== 'token') continue; // try again next run
+          }
+          await admin.from('calendar_feed_subscriptions').delete().eq('student_id', studentId).eq('feed_key', s.feed_key);
+          removed++;
+        }
+      }
+    })
+  );
   return removed;
+}
+
+// The ledger for one batch, read in parallel pages (it holds tens of thousands of rows).
+async function loadLedger(admin: SupabaseClient, batchLabel: string): Promise<LedgerRow[]> {
+  const { count, error } = await admin
+    .from('calendar_personal_ledger')
+    .select('student_id', { count: 'exact', head: true })
+    .eq('batch_label', batchLabel);
+  if (error) throw new Error(`calendar_personal_ledger count: ${error.message}`);
+  const pageSize = 1000;
+  const pages = Math.ceil((count ?? 0) / pageSize) + 1; // +1 in case rows were added meanwhile
+  const rows: LedgerRow[] = [];
+  for (const group of chunk(Array.from({ length: pages }, (_, i) => i), 8)) {
+    const results = await Promise.all(
+      group.map((i) =>
+        admin
+          .from('calendar_personal_ledger')
+          .select('*')
+          .eq('batch_label', batchLabel)
+          .order('student_id')
+          .order('origin')
+          .range(i * pageSize, i * pageSize + pageSize - 1)
+      )
+    );
+    for (const r of results) {
+      if (r.error) throw new Error(`calendar_personal_ledger: ${r.error.message}`);
+      rows.push(...((r.data ?? []) as LedgerRow[]));
+    }
+  }
+  return rows;
 }
 
 // For the Home card.

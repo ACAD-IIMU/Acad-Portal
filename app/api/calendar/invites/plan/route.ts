@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
+import { getDeadline, waitUntil } from '@vercel/functions';
 import { createAdminClient } from '@/lib/supabase/server';
 import { buildPlan } from '@/lib/calendarInvites';
+import { runPersonalSync } from '@/lib/personalCalendar';
 
 // Asked by the Apps Script inside acad@iimu.ac.in every 5 minutes:
 // "what should I create, change or remove on the calendars?"
 //
-//   POST  → the real plan (Apps Script). Records that a run happened.
+//   POST  → the real plan (Apps Script). Records that a run happened. Right after answering,
+//           keeps working in the background for ~45 s on direct mode (students' classes in
+//           their own main calendar — lib/personalCalendar.ts), so that never waits behind
+//           acad@'s own invite changes.
 //   GET   → a read-only preview for humans: counts and a sample, no student emails,
 //           nothing written. Open in a browser:
 //           https://acad-student-portal.vercel.app/api/calendar/invites/plan?secret=YOUR_SECRET
@@ -26,8 +31,12 @@ function isAuthorized(req: Request): boolean {
 
 export async function POST(req: Request) {
   if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const started = Date.now();
   try {
-    const plan = await buildPlan(createAdminClient(), { preview: false });
+    const admin = createAdminClient();
+    const plan = await buildPlan(admin, { preview: false });
+    // Not while paused or on hold — a held change must not reach students' calendars either.
+    if (!plan.paused && !plan.held) waitUntil(directInBackground(admin, started));
     return NextResponse.json(plan);
   } catch (err: any) {
     console.error('calendar plan failed:', err?.message ?? err);
@@ -62,5 +71,17 @@ export async function GET(req: Request) {
   } catch (err: any) {
     console.error('calendar plan preview failed:', err?.message ?? err);
     return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+  }
+}
+
+async function directInBackground(admin: ReturnType<typeof createAdminClient>, started: number) {
+  const end = getDeadline()?.getTime() ?? started + maxDuration * 1000;
+  const budget = end - Date.now() - 12_000; // leave time to save and finish cleanly
+  if (budget < 5_000) return;
+  try {
+    const result = await runPersonalSync(admin, budget);
+    console.log('direct calendar sync:', JSON.stringify(result));
+  } catch (err: any) {
+    console.error('direct calendar sync failed:', err?.message ?? err);
   }
 }

@@ -46,8 +46,11 @@ direct mode the portal writes each student's classes **straight into their own m
 Calendar**, using the Google permission they already gave when they signed in to the portal.
 The main calendar shows on every phone with no setup, so **students do nothing**.
 
-- Code: `lib/personalCalendar.ts`, run every 5 minutes from `/api/calendar/feeds/subscribe`
-  (called by the existing Apps Script — no Apps Script change).
+- Code: `lib/personalCalendar.ts`, run every 5 minutes in the background of
+  `/api/calendar/invites/plan` — the first thing the Apps Script calls each run — so it never
+  waits behind acad@'s own invite changes (no Apps Script change). ~45 s per run, 40 students
+  at a time; each student's finished writes are saved immediately. Google's limits (600
+  calls/min per student, 10,000/min per project) leave plenty of room.
 - A student keeps the old acad@ invites until every upcoming class is in their calendar
   (`students.personal_ready_at`), then the invites and any ACAD section calendars are removed.
 - No guests → no emails, no Yes/No buttons. Phone alerts still come from the main sync.
