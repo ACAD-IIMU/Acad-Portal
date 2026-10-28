@@ -51,6 +51,7 @@ export type StudentCalendarStatus = {
   feeds: FeedStatus[];
   allAdded: boolean;
   needsPermission: boolean; // must sign in again to grant calendar-list permission
+  confirmed: boolean; // student confirmed the ACAD calendars show on their phone
 };
 
 const TOKEN_COLUMNS = 'student_id, refresh_token, scope, updated_at, calendarlist_error, calendarlist_error_at';
@@ -204,7 +205,7 @@ export async function getStudentCalendarStatus(admin: SupabaseClient, studentId:
   const settings = await readSettings(admin);
   const batchLabel = await studentBatch(admin, studentId);
   if (!settings.feeds_enabled || !batchLabel || !BATCH_TERMS[batchLabel] || !settings.enabled_batches.includes(batchLabel)) {
-    return { enabled: false, feeds: [], allAdded: false, needsPermission: false };
+    return { enabled: false, feeds: [], allAdded: false, needsPermission: false, confirmed: false };
   }
   const state = await batchFeedState(admin, batchLabel);
   const feeds = state.statusFor(studentId);
@@ -214,8 +215,33 @@ export async function getStudentCalendarStatus(admin: SupabaseClient, studentId:
     enabled: readyFeeds.length > 0,
     feeds,
     allAdded: readyFeeds.length > 0 && readyFeeds.every((f) => f.added),
-    needsPermission: !tokenUsable(token as TokenRow | null)
+    needsPermission: !tokenUsable(token as TokenRow | null),
+    confirmed: await isConfirmed(admin, studentId)
   };
+}
+
+// Whether the student said the ACAD calendars show on their phone. False (not an error) if
+// the column doesn't exist yet.
+async function isConfirmed(admin: SupabaseClient, studentId: string): Promise<boolean> {
+  const { data, error } = await admin.from('students').select('calendar_confirmed_at').eq('id', studentId).maybeSingle();
+  if (error) return false;
+  return !!(data as { calendar_confirmed_at?: string | null } | null)?.calendar_confirmed_at;
+}
+
+// "I can see my ACAD classes on my phone" — after this the student's old guest invites are
+// removed (quietly) on the next sync, so they don't see every class twice.
+export async function confirmStudent(admin: SupabaseClient, studentId: string): Promise<{ ok: boolean; error: string | null }> {
+  const status = await getStudentCalendarStatus(admin, studentId);
+  if (!status.allAdded) return { ok: false, error: 'Add your class calendars first' };
+  const { error } = await admin
+    .from('students')
+    .update({ calendar_confirmed_at: new Date().toISOString() })
+    .eq('id', studentId);
+  if (error) {
+    console.error('confirm failed:', error.message);
+    return { ok: false, error: 'Could not save — try again in a minute' };
+  }
+  return { ok: true, error: null };
 }
 
 export async function subscribeStudent(

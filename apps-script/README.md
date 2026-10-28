@@ -39,10 +39,21 @@ Calendar app.
   browser must ask the student. On iPhone the portal must first be added to the home screen
   (Share → Add to Home Screen) — the card explains this.
 
+## Android: added calendars need "Sync" turned on
+
+Adding a calendar to a student's Google account (what the portal does) makes it appear on the
+web and in the iPhone Google Calendar app straight away. **Android's Google Calendar app does
+not sync a newly added calendar until "Sync" is turned on for it** (app → ☰ → Settings → the
+@iimu.ac.in account → each "ACAD · …" calendar → Sync). Google offers no API to switch this on.
+So after the calendars are added, the Home card shows phone-specific steps and a button
+"✓ I can see my ACAD classes on my phone" (stamps `students.calendar_confirmed_at`).
+Only then is the student taken off the old guest invites.
+
 ## The move from old guest invites (automatic, nobody loses a class)
 
 Old guest-invite events on acad@'s own calendar stay in place for every student until that
-student has **all** of their section calendars and those calendars are fully filled in.
+student has **all** of their section calendars, those calendars are fully filled in, and the
+student has confirmed on Home that they can see them on their phone.
 Then the student is quietly removed from the guest lists (no email). An old guest event is
 deleted, silently, once nobody is left on it. From the moment this code is live, **no class
 change emails anyone** — guest invites included. Students still on old guest invites get the
