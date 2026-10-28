@@ -14,6 +14,10 @@ import { LOGIN_SCOPES } from '@/lib/googleScopes';
 //    browser has to ask the student for permission.
 
 type FeedStatus = { feedKey: string; title: string; ready: boolean; added: boolean; addUrl: string | null };
+// Direct mode: classes are written straight into the student's main calendar — nothing
+// for the student to do (lib/personalCalendar.ts).
+type DirectStatus = { mode: 'direct'; ready: boolean; needsPermission: boolean };
+
 type CalendarStatus = {
   enabled: boolean;
   feeds: FeedStatus[];
@@ -48,6 +52,7 @@ function isStandalone(): boolean {
 
 export default function ClassCalendarCard() {
   const [calendar, setCalendar] = useState<CalendarStatus | null>(null);
+  const [direct, setDirect] = useState<DirectStatus | null>(null);
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [platform, setPlatform] = useState<'android' | 'ios' | 'other'>('other');
@@ -83,7 +88,9 @@ export default function ClassCalendarCard() {
     fetch('/api/calendar/feeds/me')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (active && data && !data.error) setCalendar(data as CalendarStatus);
+        if (!active || !data || data.error) return;
+        if (data.mode === 'direct') setDirect(data as DirectStatus);
+        else setCalendar(data as CalendarStatus);
       })
       .catch(() => {});
     return () => {
@@ -210,11 +217,42 @@ export default function ClassCalendarCard() {
 
   const readyFeeds = calendar?.feeds.filter((f) => f.ready) ?? [];
   const missing = readyFeeds.filter((f) => !f.added);
-  const showCalendar = !!calendar?.enabled && readyFeeds.length > 0;
+  const showCalendar = !direct && !!calendar?.enabled && readyFeeds.length > 0;
+  const showDivider = showCalendar || !!direct;
 
   return (
     <div className="card p-5">
       <h2 className="text-sm mb-3">Class calendar &amp; alerts</h2>
+
+      {direct && (
+        <div className="mb-4">
+          {direct.needsPermission ? (
+            <>
+              <p className="text-sm text-inkSoft mb-2.5">
+                Get every class in your Google Calendar automatically — it updates by itself when the timetable changes.
+              </p>
+              <button
+                onClick={grantPermission}
+                disabled={calendarBusy}
+                className="w-full text-sm font-semibold text-white bg-brand-700 rounded-full px-4 py-2 shadow-sm hover:bg-brand-800 transition disabled:opacity-50"
+              >
+                {calendarBusy ? 'Opening Google…' : '📅 Allow Google Calendar'}
+              </button>
+              {calendarError && <p className="text-danger text-xs mt-2">{calendarError}</p>}
+            </>
+          ) : direct.ready ? (
+            <p className="text-sm text-ink">
+              <span className="font-semibold text-brand-700">✓ Your classes are in your Google Calendar.</span>{' '}
+              <span className="text-inkSoft">They update by themselves when the timetable changes — nothing to do.</span>
+            </p>
+          ) : (
+            <p className="text-sm text-ink">
+              <span className="font-semibold text-brand-700">⏳ Adding your classes to your Google Calendar…</span>{' '}
+              <span className="text-inkSoft">This happens by itself within the next hour — nothing to do.</span>
+            </p>
+          )}
+        </div>
+      )}
 
       {showCalendar && (
         <div className="mb-4">
@@ -292,7 +330,7 @@ export default function ClassCalendarCard() {
         </div>
       )}
 
-      <div className={showCalendar ? 'border-t border-line pt-3.5' : ''}>
+      <div className={showDivider ? 'border-t border-line pt-3.5' : ''}>
         {alerts === 'on' && (
           <p className="text-sm">
             <span className="font-semibold text-brand-700">✓ Class alerts are on for this device.</span>{' '}

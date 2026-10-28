@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { confirmStudent, getStudentCalendarStatus, subscribeStudent } from '@/lib/calendarFeeds';
+import { getDirectStatus } from '@/lib/personalCalendar';
 
 // The signed-in student's own ACAD section calendars.
 //   GET  → which calendars they should have, and which are already in their Google Calendar
@@ -25,7 +26,10 @@ export async function GET() {
   const studentId = await currentStudentId();
   if (!studentId) return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
   try {
-    return NextResponse.json(await getStudentCalendarStatus(createAdminClient(), studentId));
+    const admin = createAdminClient();
+    const direct = await getDirectStatus(admin, studentId);
+    if (direct) return NextResponse.json(direct);
+    return NextResponse.json(await getStudentCalendarStatus(admin, studentId));
   } catch (err: any) {
     console.error('calendar status failed:', err?.message ?? err);
     return NextResponse.json({ error: 'Could not load your calendars' }, { status: 500 });
