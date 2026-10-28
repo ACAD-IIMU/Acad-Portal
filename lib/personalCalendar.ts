@@ -21,7 +21,7 @@
 //
 // Runs in the background of POST /api/calendar/invites/plan, which the Apps Script in acad@
 // calls at the START of every run (every 5 minutes) — so it never waits behind acad@'s own
-// invite changes. Each run works for ~45 seconds, ~40 students at a time, and picks up where
+// invite changes. Each run works for ~3.5 minutes, ~40 students at a time, and picks up where
 // the last one stopped. Every student's finished writes are saved straight away, so nothing is
 // redone if a run is cut short.
 
