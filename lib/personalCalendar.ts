@@ -39,6 +39,7 @@ import {
   fetchAll,
   istDateOf,
   loadBatchData,
+  movedTwinKey,
   readSettings,
   sha1,
   type ClassEntry
@@ -275,9 +276,22 @@ export async function runPersonalSync(
       }
     }
 
+    // Exams/quizzes whose time changed on the sheet (see movedTwinKey): same student, same
+    // name, same day → the old slot is removed quietly instead of shown as "❌ CANCELLED".
+    const newTwins = new Set<string>();
+    for (const d of desired.values()) {
+      const k = movedTwinKey(d.studentId, d.entry.origin, d.entry.summary, d.entry.timing.startAt);
+      if (k) newTwins.add(k);
+    }
+
     for (const l of ledger) {
       if (desired.has(`${l.student_id}|${l.origin}`)) continue;
       if (Date.parse(l.start_at) < now) continue; // past — leave it
+      const movedTo = eligible.has(l.student_id) && newTwins.has(movedTwinKey(l.student_id, l.origin, l.summary, l.start_at) ?? '');
+      if (movedTo && (l.cancelled_at || (l.missing_since && now - Date.parse(l.missing_since) >= DELETE_GRACE_MS))) {
+        ops.push({ kind: 'delete', studentId: l.student_id, origin: l.origin, batchLabel, eventId: l.event_id });
+        continue;
+      }
       const stillEligible = eligible.has(l.student_id);
       if (!stillEligible) {
         // Left direct mode: remove copies only once the invites have had time to come back.

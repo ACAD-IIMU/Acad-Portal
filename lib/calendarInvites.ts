@@ -233,6 +233,15 @@ function istToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: TIME_ZONE }); // YYYY-MM-DD
 }
 
+// A quiz/exam whose time changes on the sheet gets a new identity (its label carries the
+// time, e.g. "SL End Term Exam — 1:30 PM"), so it shows up as one entry gone and one new.
+// Same name, same day, one gone and one new = the same exam MOVED: say "Moved", and take the
+// old slot away quietly instead of showing it as "❌ CANCELLED".
+export function movedTwinKey(scope: string, origin: string | null | undefined, summary: string | null | undefined, startAt: string): string | null {
+  if (!origin || !origin.startsWith('evt:') || !summary) return null;
+  return `${scope}|${summary}|${istDateOf(startAt)}`;
+}
+
 export function istDateOf(iso: string): string {
   return new Date(iso).toLocaleDateString('en-CA', { timeZone: TIME_ZONE });
 }
@@ -1027,6 +1036,18 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
       s.waitingForCalendar = waitingForCalendar.size;
       const ledgerByKey = new Map(feedLedger.map((r) => [r.key, r]));
       const feedsWithEvents = new Set(feedLedger.map((r) => r.feed_key));
+      // Moved exams/quizzes (see movedTwinKey): old slots gone from the timetable, and new ones.
+      const goneFeedTwins = new Map<string, LedgerRow>();
+      for (const l of feedLedger) {
+        if (desired.has(l.key) || Date.parse(l.start_at) < now) continue;
+        const k = movedTwinKey(l.feed_key ?? '', l.origin, l.summary, l.start_at);
+        if (k) goneFeedTwins.set(k, l);
+      }
+      const newFeedTwins = new Set<string>();
+      for (const d of desired.values()) {
+        const k = movedTwinKey(d.feedKey, d.origin, d.summary, d.startAt);
+        if (k) newFeedTwins.add(k);
+      }
       // Feeds that still have classes waiting to be put on them for the first time.
       const stillFilling = new Set<string>(waitingForCalendar);
 
@@ -1043,9 +1064,12 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
         if (!l || l.calendar_id !== d.calendarId) {
           s.creates++;
           stillFilling.add(d.feedKey);
-          const op: PlanOp = { ...common, op: 'create', reason: 'new on the timetable' };
-          if (!l && !silent && within(d.startAt)) {
-            op.notify = { ...noteFor('new', d.origin, d.summary, d.allDay, d), studentIds: [] };
+          const was = l ? undefined : goneFeedTwins.get(movedTwinKey(d.feedKey, d.origin, d.summary, d.startAt) ?? '');
+          const op: PlanOp = { ...common, op: 'create', reason: was ? 'moved on the timetable' : 'new on the timetable' };
+          if (!l && !silent && (within(d.startAt) || (was && within(was.start_at)))) {
+            op.notify = was
+              ? { ...noteFor('changed', d.origin, d.summary, d.allDay, d, { startAt: was.start_at, location: was.location }), studentIds: [] }
+              : { ...noteFor('new', d.origin, d.summary, d.allDay, d), studentIds: [] };
             feedNotes.push({ op, feedKeys: [d.feedKey] });
           }
           push(op);
@@ -1093,6 +1117,19 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
         if (desired.has(l.key)) continue;
         if (l.feed_key && waitingForCalendar.has(l.feed_key)) continue; // calendar being replaced — leave it
         if (Date.parse(l.start_at) < now) continue; // past — leave it alone
+        const movedTo = newFeedTwins.has(movedTwinKey(l.feed_key ?? '', l.origin, l.summary, l.start_at) ?? '');
+        if (movedTo && (l.cancelled_at || (l.missing_since && now - Date.parse(l.missing_since) >= DELETE_GRACE_MS))) {
+          // Moved, not cancelled: the new time is already on the calendar. Remove the old slot
+          // quietly (this also clears old "❌ CANCELLED" leftovers of a moved exam).
+          s.deletes++;
+          push({
+            ...base, key: l.key, eventId: l.event_id, calendarId: l.calendar_id as string, feedKey: l.feed_key,
+            summary: l.summary ?? '(moved)', sendUpdates: 'none', startAt: l.start_at, endAt: l.end_at,
+            allDay: !!l.all_day, location: l.location, origin: l.origin, op: 'delete', contentHash: l.content_hash,
+            reason: 'moved on the timetable (old time removed)'
+          });
+          continue;
+        }
         if (l.cancelled_at) continue; // already shown as cancelled
         if (!l.missing_since) {
           markMissing.push(l.key);
@@ -1191,6 +1228,19 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
     // Classes already on a section calendar. A guest invite created for one of these is a
     // student being put back on the invites (not a new class), so it must not say "New".
     const onSectionCalendar = new Set(feedLedger.map((r) => r.origin).filter((o): o is string => !!o));
+    // Moved exams/quizzes (see movedTwinKey), matched per guest part ('#p1'…).
+    const partOf = (key: string) => (key.includes('#p') ? key.slice(key.indexOf('#p')) : '');
+    const goneGuestTwins = new Map<string, LedgerRow>();
+    for (const l of guestLedger) {
+      if (desiredGuests.has(l.key) || Date.parse(l.start_at) < now) continue;
+      const k = movedTwinKey(partOf(l.key), l.origin, l.summary, l.start_at);
+      if (k) goneGuestTwins.set(k, l);
+    }
+    const newGuestTwins = new Set<string>();
+    for (const d of desiredGuests.values()) {
+      const k = movedTwinKey(partOf(d.key), d.origin, d.summary, d.startAt);
+      if (k) newGuestTwins.add(k);
+    }
     s.oldInviteEvents = guestLedger.filter((r) => Date.parse(r.start_at) >= now).length;
     // First load for a batch (nothing on the calendar yet) is always silent.
     const guestSilent = globallySilent || ledger.length === 0;
@@ -1217,8 +1267,17 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
       if (!l) {
         s.creates++;
         const isNewClass = !onSectionCalendar.has(d.origin);
-        const op: PlanOp = { ...common, op: 'create', sendUpdates: 'none', reason: isNewClass ? 'new on the timetable' : 'students back on invites' };
-        if (isNewClass && pushIf(within(d.startAt))) op.notify = { ...noteFor('new', d.origin, d.summary, d.allDay, d), studentIds: idsOf(d.guestEmails) };
+        const was = goneGuestTwins.get(movedTwinKey(partOf(d.key), d.origin, d.summary, d.startAt) ?? '');
+        const op: PlanOp = { ...common, op: 'create', sendUpdates: 'none',
+          reason: was ? 'moved on the timetable' : isNewClass ? 'new on the timetable' : 'students back on invites' };
+        if (was && pushIf(within(d.startAt) || within(was.start_at))) {
+          op.notify = {
+            ...noteFor('changed', d.origin, d.summary, d.allDay, d, { startAt: was.start_at, location: was.location }),
+            studentIds: idsOf(d.guestEmails)
+          };
+        } else if (!was && isNewClass && pushIf(within(d.startAt))) {
+          op.notify = { ...noteFor('new', d.origin, d.summary, d.allDay, d), studentIds: idsOf(d.guestEmails) };
+        }
         push(op);
         continue;
       }
@@ -1284,7 +1343,9 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
       // An extra guest part ('#p1', '#p2'…) disappearing just means the guest list got
       // shorter — those students are already on another part — so that one is silent.
       const isExtraPart = l.key.includes('#p');
-      const alert = !isExtraPart && within(l.start_at);
+      // Moved, not cancelled (the new time is already on the invites): no "Cancelled" alert.
+      const movedTo = newGuestTwins.has(movedTwinKey(partOf(l.key), l.origin, l.summary, l.start_at) ?? '');
+      const alert = !isExtraPart && !movedTo && within(l.start_at);
       const op: PlanOp = { ...common, op: 'delete', summary: l.summary ?? '(removed from timetable)',
         sendUpdates: 'none', reason: 'no longer on the timetable' };
       if (pushIf(alert)) {
