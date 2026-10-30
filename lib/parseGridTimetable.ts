@@ -142,6 +142,59 @@ function unnumberedSessionNumber(sessionDate: string, sectionLabel: string, colI
   return UNNUMBERED_SESSION_BASE + month * 100000 + day * 1000 + sectionOrdinal * 10 + colIndexInGroup;
 }
 
+// ---------------------------------------------------------------------------------
+// Paper showings. A cell like "OR Quiz paper showing 2:15-3:00 PM" (Term-II, Oct 30,
+// Section E) is NOT a quiz -- it is that section's slot to see their marked quiz
+// paper. These used to fall through to the event classifier, which saw the word
+// "Quiz" and created a batch-wide "OR Quiz — 3:00 PM" (it even took the END time):
+// every section got a fake quiz on their calendar. Now each paper showing is read
+// here and stored as a real slot for ONLY the section whose column it is in, with
+// the time the cell states. Real shapes from the sheet:
+//   "FRA End-Term\nPaper Showing\n2:45 to 3"    "MEM MT Paper Showing\n10-10:30"
+//   "MM Mid-Term\n& Quiz 2\nPaper Showing\n2:30 to 3"    "IGD MT Paper \nShowing\n4-4:30"
+// Subject codes are always capitals, so "Reserved for Placement" etc. never match.
+const PAPER_SHOWING_RE =
+  /(?<![A-Za-z])([A-Z]{2,6})\s*((?:(?:[Qq]uiz\s*-?\s*\d*|[Mm]id[\s-]*[Tt]erm|[Ee]nd[\s-]*[Tt]erm|MT|ET)\s*(?:&\s*)?)*)\s*[Pp]aper\s*[Ss]howing\s*:?\s*((?:\d{1,2}(?:[:.]\d{2})?)\s*(?:[AaPp]\.?[Mm]\.?)?\s*(?:-|–|to)\s*\d{1,2}(?:[:.]\d{2})?\s*(?:[AaPp]\.?[Mm]\.?)?)?/g;
+
+const PAPER_SHOWING_SESSION_BASE = 5000000; // own range: never collides with real or 800000-based numbers
+
+function paperShowingSessionNumber(sessionDate: string, sectionLabel: string, colIndexInGroup: number, indexInCell: number): number {
+  const [, month, day] = sessionDate.split("-").map(Number);
+  const sectionOrdinal = sectionLabel.toUpperCase().charCodeAt(0) - 64;
+  return PAPER_SHOWING_SESSION_BASE + month * 100000 + day * 1000 + sectionOrdinal * 100 + colIndexInGroup * 10 + indexInCell;
+}
+
+function paperShowingKindLabel(kindsRaw: string): string {
+  return kindsRaw
+    .split("&")
+    .map((k) => k.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .map((k) => {
+      if (/^mid/i.test(k) || k === "MT") return "Mid-Term";
+      if (/^end/i.test(k) || k === "ET") return "End-Term";
+      const num = k.match(/(\d+)/);
+      return num ? `Quiz ${num[1]}` : "Quiz";
+    })
+    .join(" & ");
+}
+
+/** Pulls every paper showing out of a cell. Returns them plus the rest of the cell
+ * (anything else in it, e.g. "Reserved for Placement 3-6 pm", still goes on as before). */
+function extractPaperShowings(text: string): {
+  found: Array<{ code: string; label: string; timeText: string | null }>;
+  remainder: string;
+} {
+  const found: Array<{ code: string; label: string; timeText: string | null }> = [];
+  const remainder = text.replace(new RegExp(PAPER_SHOWING_RE), (_all, code: string, kinds: string, time: string | undefined) => {
+    const kindLabel = paperShowingKindLabel(kinds ?? "");
+    // parseCellTimeRange needs minutes on the start ("10-10:40" -> "10:00-10:40").
+    const timeText = time ? time.trim().replace(/^(\d{1,2})(?![\d:.])/, "$1:00") : null;
+    found.push({ code, label: `${code} ${kindLabel ? `${kindLabel} ` : ""}Paper Showing`, timeText });
+    return "\n";
+  });
+  return { found, remainder };
+}
+
 /** True only when EVERY column from 0 to lastCol is empty on this row -- confirmed
  * directly against the real file to be the actual, unique signal for "the date grid
  * has ended, the subject-legend table starts after this" (exactly one such row
@@ -726,6 +779,28 @@ export async function parseGridTimetableWorkbook(buffer: Buffer, targetTerm: str
         // runs until the last merged slot ends, unless it states its own time.
         const mergedEndCol = Math.min(mergedEndColByAddr.get(cellAddr) ?? col, group.endCol);
         const spanEndTime = group.slotTimes[mergedEndCol - group.startCol]?.endTime ?? slot.endTime;
+
+        // Paper showings first (see PAPER_SHOWING_RE): stored as this section's own slot,
+        // never as a batch-wide quiz/exam event.
+        const paperShowings = extractPaperShowings(cellSourceText);
+        paperShowings.found.forEach((ps, i) => {
+          const explicit = ps.timeText ? parseCellTimeRange(ps.timeText, slotStartMin) : null;
+          sessions.push({
+            subjectCode: normalizeCode(ps.code),
+            rawCode: ps.code,
+            sectionLabel: group.label,
+            sessionNumber: paperShowingSessionNumber(sessionDate, group.label, colIndexInGroup, i),
+            room: group.room,
+            sessionDate,
+            startTime: explicit?.startTime ?? slot.startTime,
+            endTime: explicit?.endTime ?? slot.endTime,
+            sessionLabel: ps.label,
+          });
+        });
+        if (paperShowings.found.length > 0) {
+          cellSourceText = paperShowings.remainder;
+          if (NO_CLASS_MARKERS.has(cellSourceText.replace(/\s+/g, " ").trim())) continue;
+        }
 
         // Each line of the cell is read on its own (a class, a time, or anything else).
         // A time line directly under a class sets that class's time. Every other line
