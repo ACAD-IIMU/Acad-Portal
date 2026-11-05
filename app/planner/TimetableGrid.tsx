@@ -1,7 +1,8 @@
 // app/planner/TimetableGrid.tsx
 //
 // The date × session-slot grid, shared by the manual builder (full term) and the
-// smart generator's per-option preview (`compact`, which hides empty days).
+// smart generator's per-option preview (`compact`, slightly tighter rows). Both
+// show every day of the term; days without a selected class read "No classes".
 
 'use client';
 
@@ -37,13 +38,13 @@ export default function TimetableGrid({
   const clashCells = new Set(clashes.map((c) => `${c.date}|${c.slot}`));
   const clashCodes = new Set(clashes.flatMap((c) => c.codes));
 
-  const days = compact
-    ? data.timetable.filter((d) =>
-        Object.values(d.slots).some((es) => (es ?? []).some((e) => selected.has(e.code)))
-      )
-    : data.timetable;
+  // Every day of the term is shown, including ones with no class: free days are
+  // what "Maximise gap days" is about, so hiding them hid the point.
+  const days = data.timetable;
+  const hasClass = (d: (typeof days)[number]) =>
+    Object.values(d.slots).some((es) => (es ?? []).some((e) => selected.has(e.code)));
 
-  if (!days.length) {
+  if (!days.some(hasClass)) {
     return (
       <div className="py-10 text-center text-sm text-inkFaint">
         None of the selected sections have scheduled classes this term.
@@ -103,7 +104,16 @@ export default function TimetableGrid({
                   <div className="text-inkFaint text-[10px]">{formatDate(day.date)}</div>
                 </td>
 
-                {data.sessions.map((session) => {
+                {!hasClass(day) ? (
+                  <td
+                    colSpan={data.sessions.length}
+                    className={`px-2 border-b border-line align-middle text-inkFaint italic ${
+                      compact ? 'py-1' : 'py-1.5'
+                    }`}
+                  >
+                    No classes
+                  </td>
+                ) : data.sessions.map((session) => {
                   const entries = (day.slots[session.slot_key] ?? []).filter((e) =>
                     selected.has(e.code)
                   );
