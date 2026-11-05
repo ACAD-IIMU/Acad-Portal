@@ -9,7 +9,10 @@
 //   - STEP (exchange) students get at most 20 converted credits for Term V.
 //   - The second year must total 60-64 credits. Term VI has no fixed minimum;
 //     its range is whatever keeps the year between 60 and 64.
-//   - A CIS is always 4 credits, at most one per term. Students can't take a CIS in Term VI.
+//   - A CIS is always 4 credits, at most one per term. The guidelines say no CIS in
+//     Term VI, but ACAD now allows one, so the Term Planner's budget
+//     (computeTerm6Electives below) has a Term VI CIS option. The EAP card still
+//     follows the guidelines.
 //   - Every elective is 2 or 4 credits, so course credits must be even.
 //   - The Term VI range includes the 2-credit Capstone course.
 
@@ -74,4 +77,53 @@ export function computeTerm6Range(input: CreditInput): CreditResult {
     term6Min: Math.max(0, R.year.min - done),
     term6Max: Math.max(0, R.year.max - done),
   };
+}
+
+// ── TERM VI ELECTIVE BUDGET (Term Planner) ─────────────────────────────────
+// The student enters the second-year credits they already have (Term IV + Term V,
+// CIS included) and whether they're taking a CIS in Term VI. Capstone (2) is
+// counted for everyone. What's left of the 60–64 year total is the elective
+// range they must pick in the planner.
+
+export type Term6BudgetInput = {
+  creditsSoFar: number;
+  term6Cis: boolean;
+};
+
+export type Term6Budget = {
+  fixed: number;        // Capstone + Term VI CIS, if any
+  electiveMin: number;
+  electiveMax: number;
+  errors: string[];     // the range can't be used
+  warnings: string[];   // the range is shown, but the input looks unusual
+};
+
+export function computeTerm6Electives(input: Term6BudgetInput): Term6Budget {
+  const R = CREDIT_RULES;
+  const fixed = R.capstone + (input.term6Cis ? R.cis : 0);
+  const soFar = input.creditsSoFar;
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!Number.isInteger(soFar) || soFar < 0) {
+    errors.push('Enter a whole number of credits.');
+  } else if (soFar % 2 !== 0) {
+    errors.push('Enter an even number. Courses are 2 or 4 credits and a CIS is 4.');
+  } else if (soFar + fixed > R.year.max) {
+    errors.push(
+      `${soFar} so far + ${fixed} in Term VI is ${soFar + fixed}, above the ${R.year.max}-credit second-year maximum.`
+    );
+  } else {
+    const lo = R.term4.min + R.term5.min;
+    const hi = R.term4.max + R.term5.max;
+    if (soFar < lo || soFar > hi) {
+      warnings.push(
+        `Terms IV and V usually add up to ${lo}–${hi} credits. Check your number against your grade sheet.`
+      );
+    }
+  }
+
+  const electiveMin = Math.max(0, R.year.min - soFar - fixed);
+  const electiveMax = Math.max(0, R.year.max - soFar - fixed);
+  return { fixed, electiveMin, electiveMax, errors, warnings };
 }

@@ -9,26 +9,41 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PlannerData } from '@/lib/plannerTypes';
 import {
-  CREDIT_LIMIT,
   detectClashes,
   formatDate,
+  isCapstone,
   slotLabel,
   truncate,
+  type CreditBudget,
   type Lookups,
 } from './plannerLogic';
 import TimetableGrid from './TimetableGrid';
+import { CreditBadge, CreditHint } from './CreditBadge';
+import LockIcon from './LockIcon';
 
 const STORAGE_KEY = 'acad-planner-manual';
 
 export default function ManualBuilder({
   data,
   lookups,
+  budget,
 }: {
   data: PlannerData;
   lookups: Lookups;
+  budget: CreditBudget;
 }) {
+  // Required courses (Capstone) start selected on their first section.
+  const requiredDefaults = useMemo(
+    () =>
+      Object.fromEntries(lookups.required.map((s) => [s, data.subject_sections[s][0]])) as Record<
+        string,
+        string
+      >,
+    [lookups.required, data]
+  );
+
   // subject name -> chosen section code
-  const [selections, setSelections] = useState<Record<string, string>>({});
+  const [selections, setSelections] = useState<Record<string, string>>(requiredDefaults);
   const [query, setQuery] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -41,7 +56,7 @@ export default function ManualBuilder({
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const saved = JSON.parse(raw) as Record<string, string>;
-        const valid: Record<string, string> = {};
+        const valid: Record<string, string> = { ...requiredDefaults };
         for (const [subject, code] of Object.entries(saved)) {
           if (data.subject_sections[subject]?.includes(code)) valid[subject] = code;
         }
@@ -51,7 +66,7 @@ export default function ManualBuilder({
       // corrupt or unavailable storage is not worth failing the page over
     }
     setHydrated(true);
-  }, [data]);
+  }, [data, requiredDefaults]);
 
   useEffect(() => {
     if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(selections));
@@ -68,7 +83,8 @@ export default function ManualBuilder({
     return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
-  const chosenSubjects = Object.keys(selections).sort();
+  // Same order as the course list: required first, then alphabetical.
+  const chosenSubjects = lookups.subjects.filter((s) => selections[s]);
   const codes = useMemo(() => Object.values(selections).filter(Boolean), [selections]);
   const clashes = useMemo(() => detectClashes(data, codes), [data, codes]);
   const clashCodes = useMemo(
@@ -76,8 +92,9 @@ export default function ManualBuilder({
     [clashes]
   );
 
+  // Elective credits only: Capstone is already counted in the budget.
   const credits = chosenSubjects.reduce(
-    (sum, subject) => sum + (data.courses[selections[subject]]?.credits ?? 0),
+    (sum, subject) => sum + lookups.electiveCreditsOf(subject),
     0
   );
 
@@ -93,13 +110,14 @@ export default function ManualBuilder({
 
   function addSubject(subject: string) {
     if (selections[subject]) return;
-    if (credits + lookups.creditsOf(subject) > CREDIT_LIMIT) return;
+    if (credits + lookups.electiveCreditsOf(subject) > budget.max) return;
     setSelections((prev) => ({ ...prev, [subject]: data.subject_sections[subject][0] }));
     setQuery('');
     setDropdownOpen(false);
   }
 
   function removeSubject(subject: string) {
+    if (isCapstone(subject)) return; // required for everyone
     setSelections((prev) => {
       const next = { ...prev };
       delete next[subject];
@@ -157,22 +175,13 @@ export default function ManualBuilder({
     <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5 items-start">
       {/* ── Selection panel ── */}
       <section className="card p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="text-xs font-semibold text-inkFaint uppercase tracking-wider">
             Your subjects
           </h2>
-          <span
-            className={`text-xs font-mono font-semibold px-2 py-1 rounded-full ${
-              credits === 0
-                ? 'text-inkFaint bg-cream'
-                : credits >= CREDIT_LIMIT
-                ? 'text-danger bg-danger-100'
-                : 'text-brand-800 bg-brand-50 border border-brand-100'
-            }`}
-          >
-            {credits} / {CREDIT_LIMIT} credits
-          </span>
+          <CreditBadge credits={credits} budget={budget} />
         </div>
+        <CreditHint credits={credits} budget={budget} />
 
         <div className="flex flex-col gap-2">
           {chosenSubjects.length === 0 && (
@@ -184,6 +193,7 @@ export default function ManualBuilder({
             const selected = selections[subject];
             const hasClash = clashCodes.has(selected);
             const [bg, fg, accent] = lookups.colorOf(subject);
+            const locked = isCapstone(subject);
 
             return (
               <div
@@ -201,7 +211,7 @@ export default function ManualBuilder({
                     {truncate(subject, 30)}
                   </div>
                   <div className="text-[11px] text-inkFaint truncate">
-                    {sections.join(' / ')}
+                    {locked ? 'Required for everyone · pick your section' : sections.join(' / ')}
                   </div>
                 </div>
 
@@ -229,13 +239,23 @@ export default function ManualBuilder({
                   </span>
                 )}
 
-                <button
-                  onClick={() => removeSubject(subject)}
-                  aria-label={`Remove ${subject}`}
-                  className="w-7 h-7 rounded-full text-inkFaint hover:text-danger hover:bg-danger-100 transition flex items-center justify-center flex-shrink-0"
-                >
-                  ✕
-                </button>
+                {locked ? (
+                  <span
+                    title="Required for everyone, can't be removed"
+                    aria-label={`${subject} is required and can't be removed`}
+                    className="w-7 h-7 text-inkFaint flex items-center justify-center flex-shrink-0"
+                  >
+                    <LockIcon />
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => removeSubject(subject)}
+                    aria-label={`Remove ${subject}`}
+                    className="w-7 h-7 rounded-full text-inkFaint hover:text-danger hover:bg-danger-100 transition flex items-center justify-center flex-shrink-0"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             );
           })}
@@ -261,7 +281,8 @@ export default function ManualBuilder({
               ) : (
                 suggestions.map((subject) => {
                   const added = Boolean(selections[subject]);
-                  const wouldExceed = !added && credits + lookups.creditsOf(subject) > CREDIT_LIMIT;
+                  const wouldExceed =
+                    !added && credits + lookups.electiveCreditsOf(subject) > budget.max;
                   return (
                     <button
                       key={subject}
@@ -279,7 +300,9 @@ export default function ManualBuilder({
                       </span>
                       {added && <span className="text-inkFaint text-[11px] ml-1">· added</span>}
                       {wouldExceed && (
-                        <span className="text-danger text-[11px] ml-1">· exceeds {CREDIT_LIMIT} credit limit</span>
+                        <span className="text-danger text-[11px] ml-1">
+                          · exceeds your maximum of {budget.max}
+                        </span>
                       )}
                     </button>
                   );

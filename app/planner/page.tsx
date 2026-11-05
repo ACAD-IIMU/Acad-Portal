@@ -35,13 +35,12 @@ export default async function PlannerPage() {
   // Blocked here rather than just hidden from the nav (components/Sidebar.tsx's
   // HIDDEN_FOR_MBA1) so a direct URL doesn't show MBA2's course/elective data either.
   //
-  // MBA2/Term V is ALSO blocked now, separately: Term V's own bidding cycle is done,
-  // so the planner has nothing left to serve this batch this term either. This is a
-  // manual, per-term toggle (see components/Sidebar.tsx's HIDDEN_FOR_MBA2) — expect
-  // this condition to move to whichever cohort is current once Term VI starts, not
-  // stay MBA2-specific forever.
-  if (student?.cohort === 'MBA1' || student?.cohort === 'MBA2') {
-    const isMba1 = student?.cohort === 'MBA1';
+  // MBA2 was blocked once Term V's bidding ended. It's open again for Term VI
+  // bidding. When Term VI bidding is done, block MBA2 again here and in
+  // components/Sidebar.tsx's HIDDEN_FOR_MBA2.
+  if (student?.cohort === 'MBA1') {
+    // Both messages kept so blocking MBA2 again only means widening the `if`.
+    const isMba1 = student.cohort === 'MBA1';
     return (
       <div className="flex flex-col md:flex-row min-h-screen">
         <Sidebar batchLabel={student.batch_label} cohort={student.cohort} />

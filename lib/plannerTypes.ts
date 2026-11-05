@@ -1,7 +1,7 @@
 // lib/plannerTypes.ts
 //
 // Shape of the term-planner dataset produced by scripts/parse_term_planner.py
-// from the "Term V" sheet of the MBA batch timetable workbook.
+// from a term sheet ("Term VI" today) of the MBA batch timetable workbook.
 //
 // This is deliberately a *separate* data path from the Supabase `sessions`
 // table the rest of the portal reads. The planner answers a different question
@@ -37,7 +37,7 @@ export interface PlannerDay {
 }
 
 export interface PlannerData {
-  term: string;                                   // "Term V"
+  term: string;                                   // "Term VI"
   sessions: PlannerSession[];
   courses: Record<string, PlannerCourse>;         // section code -> course
   subject_sections: Record<string, string[]>;     // course name -> section codes

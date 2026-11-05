@@ -14,7 +14,24 @@ import { detectClashes } from '@/lib/plannerTypes';
 
 export { detectClashes };
 
-export const CREDIT_LIMIT = 22;
+// ── CREDIT BUDGET ──────────────────────────────────────────────────────────
+// The elective range a student may pick, from the "Your Term VI credits" card
+// (lib/eapCredits.ts computeTerm6Electives). Until they fill it in, the cap is
+// the widest Term VI can be: 64 − (24 + 18 minimum for Terms IV–V) − 2 Capstone.
+export interface CreditBudget {
+  min: number;
+  max: number;
+  personal: boolean; // false = the fallback cap, not the student's own range
+}
+
+export const FALLBACK_BUDGET: CreditBudget = { min: 0, max: 20, personal: false };
+
+// Capstone is compulsory: both tabs keep it selected, first in the list, and
+// it can't be removed. Its 2 credits are already in the budget, so it never
+// counts toward the elective total. Its section can still be changed.
+export function isCapstone(subject: string): boolean {
+  return /capstone/i.test(subject);
+}
 
 export type PrefId =
   | 'no_9am'
@@ -59,10 +76,15 @@ export type Lookups = {
   codeToSubject: Record<string, string>;
   colorOf: (subject: string) => [string, string, string];
   creditsOf: (subject: string) => number;
+  electiveCreditsOf: (subject: string) => number; // 0 for Capstone (already counted)
+  required: string[];                       // always selected and can't be removed (Capstone)
 };
 
 export function buildLookups(data: PlannerData): Lookups {
-  const subjects = Object.keys(data.subject_sections).sort();
+  // Required courses first, then alphabetical.
+  const subjects = Object.keys(data.subject_sections).sort(
+    (a, b) => Number(isCapstone(b)) - Number(isCapstone(a)) || (a < b ? -1 : a > b ? 1 : 0)
+  );
 
   const colorIndex: Record<string, number> = {};
   subjects.forEach((s, i) => (colorIndex[s] = i % PALETTE.length));
@@ -72,14 +94,18 @@ export function buildLookups(data: PlannerData): Lookups {
     codes.forEach((c) => (codeToSubject[c] = subject));
   }
 
+  const creditsOf = (subject: string) => {
+    const first = data.subject_sections[subject]?.[0];
+    return (first && data.courses[first]?.credits) || 0;
+  };
+
   return {
     subjects,
     codeToSubject,
     colorOf: (subject) => PALETTE[colorIndex[subject] ?? 0],
-    creditsOf: (subject) => {
-      const first = data.subject_sections[subject]?.[0];
-      return (first && data.courses[first]?.credits) || 0;
-    },
+    creditsOf,
+    electiveCreditsOf: (subject) => (isCapstone(subject) ? 0 : creditsOf(subject)),
+    required: subjects.filter(isCapstone),
   };
 }
 
@@ -165,7 +191,11 @@ export function scoreCombo(
   }
 
   if (prefs.has('even_dist')) {
+    // Every day of the week the term has counts, including ones with no class
+    // for this combo. Counting only busy days made a timetable piled onto two
+    // weekdays look perfectly even.
     const byDow: Record<string, number> = {};
+    for (const day of data.timetable) byDow[day.day] = 0;
     for (const { day, slots } of active) {
       byDow[day.day] = (byDow[day.day] ?? 0) + slots.length;
     }
@@ -268,6 +298,47 @@ export function prefMet(
   }
   return null; // the remaining prefs are gradual, not pass/fail
 }
+
+/**
+ * For a pass/fail preference a combination misses: how many days break it and
+ * which sections cause that. Null when the preference is met or is gradual.
+ */
+export function prefShortfall(
+  data: PlannerData,
+  combo: string[],
+  pref: PrefId
+): { days: number; codes: string[] } | null {
+  const codes = new Set(combo);
+  const culprits = new Set<string>();
+  let days = 0;
+
+  for (const day of data.timetable) {
+    let hit = false;
+    for (const [slot, entries] of Object.entries(day.slots)) {
+      const counts =
+        pref === 'no_9am' ? slot === 's1'
+        : pref === 'no_645pm' ? slot === 's6'
+        : pref === 'free_weekends' ? isWeekend(day.day)
+        : false;
+      if (!counts) continue;
+      for (const e of entries ?? []) {
+        if (codes.has(e.code)) {
+          culprits.add(e.code);
+          hit = true;
+        }
+      }
+    }
+    if (hit) days++;
+  }
+
+  return days ? { days, codes: combo.filter((c) => culprits.has(c)) } : null;
+}
+
+export const SHORTFALL_TEXT: Partial<Record<PrefId, (days: number) => string>> = {
+  no_9am: (n) => `${n} day${n === 1 ? '' : 's'} still ${n === 1 ? 'has' : 'have'} a 9:00 am class`,
+  no_645pm: (n) => `${n} day${n === 1 ? '' : 's'} still ${n === 1 ? 'has' : 'have'} a 6:45 pm class`,
+  free_weekends: (n) => `${n} weekend day${n === 1 ? '' : 's'} still ${n === 1 ? 'has' : 'have'} classes`,
+};
 
 // ── FEASIBILITY ────────────────────────────────────────────────────────────
 // A clash is inherently pairwise: two sections clash iff they share a slot on

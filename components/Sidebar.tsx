@@ -81,13 +81,12 @@ const NAV_ITEMS: NavItem[] = [
 // never decided for it.
 const HIDDEN_FOR_MBA1 = new Set(['/eap', '/planner']);
 
-// MBA2/Term V-only hide, added once Term V's own elective bidding + planning cycle
-// was done — Term Planner no longer serves this batch this term. This is a manual,
-// per-term toggle (not a permanent per-batch rule): expect this to move to whichever
-// href/cohort combination is current once Term VI starts, not stay MBA2-specific
-// forever. SR Elections is deliberately NOT in this set — that stays visible for
-// MBA2, just locked to its Results tab (see app/sr-elections/page.tsx).
-const HIDDEN_FOR_MBA2 = new Set(['/planner']);
+// Manual per-term toggle for MBA2. Term Planner was hidden after Term V bidding and
+// is visible again for Term VI bidding; add '/planner' back here (and in
+// app/planner/page.tsx) once that's done. SR Elections is deliberately NOT in this
+// set — that stays visible for MBA2, just locked to its Results tab (see
+// app/sr-elections/page.tsx).
+const HIDDEN_FOR_MBA2 = new Set<string>([]);
 
 const COLLAPSE_KEY = 'acad-sidebar-collapsed';
 

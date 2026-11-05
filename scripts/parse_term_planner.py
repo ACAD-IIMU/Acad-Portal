@@ -4,7 +4,7 @@ parse_term_planner.py
 Builds the term-planner dataset (data/termPlanner.json) from a term sheet of the
 MBA batch timetable workbook.
 
-    python3 scripts/parse_term_planner.py "MBA 2025-27 Batch Timetable.xlsx" --term "Term V"
+    python3 scripts/parse_term_planner.py "MBA 2025-27 Batch Timetable.xlsx" --term "Term VI"
 
 Why this exists separately from lib/parseTimetable.ts:
   parseTimetable.ts feeds Supabase with *this student's* sessions. The planner
@@ -100,14 +100,29 @@ BARE_NUM_RE = re.compile(r"^(.+?)\s*-\s*(\d+)\s*$")
 # "MG (A) & (B) - S13" — one physical class both sections attend. Two entries,
 # so the slot is correctly seen as occupied for either section.
 JOINT_RE = re.compile(r"^(.+?)\s*\(([A-Z])\)\s*&\s*\(([A-Z])\)\s*-\s*S\s*(\d+)", re.IGNORECASE)
+JOINT_BARE_RE = re.compile(r"^(.+?)\s*\(([A-Z])\)\s*&\s*\(([A-Z])\)\s*$", re.IGNORECASE)
+
+# "'GTA (B) - S4" (Term VI) — a stray quote typed in front of the code.
+STRAY_QUOTES_RE = re.compile(r"^['‘’`\"]+")
 
 # ── NON-CLASS TEXT ─────────────────────────────────────────────────────────
 NO_CLASS = {"---", "--", "<=>", "", "`", "tbd", "reserved"}
+
+# A fragment that is only a parenthetical is a note on the line above it:
+# "(Combined online session for all sections)", "(CR-8B-18)".
+NOTE_RE = re.compile(r"^\(.*\)$")
 
 # Exams occupy the day but aren't teaching sessions and don't use the six normal
 # slots ("=> 9.30 am" / "=> 2.30 pm"). Collected separately so nothing is lost
 # silently, but kept out of `slots` — clash detection is about class timetables.
 EXAM_MARKERS = ("end term exam", "mid term exam", "exam tbd", "end term exams")
+
+# Term VI's last week has one merged cell "<= End Term Exam, 9.30 am / End Term
+# Exam, 2.30 pm =>" spanning several rows, with bare course codes ("M&S", "GTA (A)
+# & (B)") on either side of it. The arrow cell is a pointer, not an exam; the
+# bare codes beside it are the exams.
+POINTER_RE = re.compile(r"^<=\s*end term exam|end term exam.*=>$", re.IGNORECASE)
+TIME_RE = re.compile(r"(\d{1,2}[.:]\d{2}\s*[ap]m)", re.IGNORECASE)
 
 
 def num(value):
@@ -151,6 +166,8 @@ def parse_month_label(value):
         return None
     if isinstance(value, (datetime, date)):
         return value.strftime("%b '%y"), value.year, value.month
+    # Term VI types them as text with a curly quote ("Dec. ‘26"); the label is
+    # rebuilt below so every term displays as "Dec '26".
     text = str(value).strip()
     if not text or text.lower() in NO_CLASS:
         return None
@@ -165,7 +182,7 @@ def parse_month_label(value):
     year = int(m.group(2))
     if year < 100:
         year += 2000
-    return text, year, month
+    return date(year, month, 1).strftime("%b '%y"), year, month
 
 
 def parse_courses(ws):
@@ -177,7 +194,8 @@ def parse_courses(ws):
         sl, name, codes, credits, _classroom, instructor = row
         if num(sl) is None or not codes or not name:
             continue
-        for line in str(codes).split("\n"):
+        # Term VI lists Capstone as "CE (A), CE (B)\n CE (C), ..." — commas too.
+        for line in re.split(r"[\n,]", str(codes)):
             raw = line.strip()
             if not raw:
                 continue
@@ -191,29 +209,52 @@ def parse_courses(ws):
     return courses, display
 
 
-def parse_entries(cell_text, known, report):
+def is_exam(text: str) -> bool:
+    low = text.lower()
+    return any(marker in low for marker in EXAM_MARKERS)
+
+
+def parse_entries(cell_text, known, sections_of_base, pointer, col, report):
     """One grid cell -> list of {code (canonical), session_num}.
 
     session_num 0 means the sheet scheduled the class without numbering it
     ("IMC - COIL Interaction", "FT&IT - Additional Session"). Those still occupy
     the slot, so they must count for clash detection.
+
+    A code with no section where the catalogue only has sections ("CE - S1",
+    Term VI's combined Capstone session) means every section of it.
     """
     if cell_text is None:
         return [], []
 
     entries, exams = [], []
 
+    def is_course(code):
+        return code in known or code in sections_of_base
+
+    def expand(code):
+        if code in known or code not in sections_of_base:
+            return [code]
+        return sections_of_base[code]
+
     # '/' is the sheet's intentional separator; newlines are sometimes a soft
     # wrap and sometimes a second entry, so both are split on — only the code
-    # and session number are needed, never the surrounding prose.
-    for part in re.split(r"\s*/\s*|\n", str(cell_text)):
-        part = " ".join(part.split())
+    # and session number are needed, never the surrounding prose. A cell that is
+    # only exam text keeps its '/': "ERPS / FTM End Term Exam" is one exam.
+    lines = str(cell_text).split("\n")
+    exam_only = all(not l.strip() or is_exam(l) for l in lines)
+    parts = lines if exam_only else re.split(r"\s*/\s*|\n", str(cell_text))
+
+    for part in parts:
+        part = STRAY_QUOTES_RE.sub("", " ".join(part.split())).strip()
         if not part or part.lower() in NO_CLASS:
             continue
+        if NOTE_RE.match(part):
+            continue
 
-        low = part.lower()
-        if any(marker in low for marker in EXAM_MARKERS):
-            exams.append(part)
+        if is_exam(part):
+            if not POINTER_RE.search(part):  # the arrow cell is read via `pointer`
+                exams.append(part)
             continue
 
         joint = JOINT_RE.match(part)
@@ -225,33 +266,72 @@ def parse_entries(cell_text, known, report):
 
         m = ENTRY_RE.match(part)
         if m:
-            entries.append((canon(m.group(1)), int(m.group(2))))
+            for code in expand(canon(m.group(1))):
+                entries.append((code, int(m.group(2))))
             continue
 
         # Fallbacks below only fire for a prefix that is already a known code,
         # so malformed prose can't invent a class.
         m = BARE_NUM_RE.match(part)
-        if m and canon(m.group(1)) in known:
-            entries.append((canon(m.group(1)), int(m.group(2))))
+        if m and is_course(canon(m.group(1))):
+            for code in expand(canon(m.group(1))):
+                entries.append((code, int(m.group(2))))
             continue
 
         if " - " in part:
-            prefix = part.split(" - ", 1)[0]
-            if canon(prefix) in known:
-                entries.append((canon(prefix), 0))  # scheduled but unnumbered
+            prefix = canon(part.split(" - ", 1)[0])
+            if is_course(prefix):
+                for code in expand(prefix):
+                    entries.append((code, 0))  # scheduled but unnumbered
                 continue
+
+        # A bare course code beside an "<= End Term Exam =>" pointer is its exam.
+        jb = JOINT_BARE_RE.match(part)
+        if pointer and (is_course(canon(part)) or (jb and is_course(canon(jb.group(1))))):
+            first_col, last_col, left_time, right_time = pointer
+            time = left_time if col < first_col else right_time if col > last_col else None
+            exams.append(f"{part} End Term Exam" + (f" => {time}" if time else ""))
+            continue
 
         report.add(part)
 
     return entries, exams
 
 
-def parse_timetable(ws, known, report):
+def find_exam_pointers(ws):
+    """Row number -> (first_col, last_col, left_time, right_time) for every row an
+    "<= End Term Exam ... =>" cell covers, following merged ranges down."""
+    merged = {(r.min_row, r.min_col): r for r in ws.merged_cells.ranges}
+    pointers = {}
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=4, max_col=9):
+        for cell in row:
+            v = cell.value
+            if not isinstance(v, str) or not re.search(r"<=|=>", v) or "end term exam" not in v.lower():
+                continue
+            parts = [" ".join(p.split()) for p in v.split("\n")]
+            if not any(POINTER_RE.search(p) for p in parts):
+                continue
+            left = next((p for p in parts if p.startswith("<=")), None)
+            right = next((p for p in parts if p.endswith("=>")), None)
+            left_time = TIME_RE.search(left).group(1) if left and TIME_RE.search(left) else None
+            right_time = TIME_RE.search(right).group(1) if right and TIME_RE.search(right) else None
+            rng = merged.get((cell.row, cell.column))
+            r1, r2 = (rng.min_row, rng.max_row) if rng else (cell.row, cell.row)
+            c1, c2 = (rng.min_col, rng.max_col) if rng else (cell.column, cell.column)
+            for r in range(r1, r2 + 1):
+                pointers[r] = (c1, c2, left_time, right_time)
+    return pointers
+
+
+def parse_timetable(ws, known, sections_of_base, report):
     days, exams = [], []
     month_label, year, month = "", None, None
     week = ""
+    pointers = find_exam_pointers(ws)
 
-    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=10, values_only=True):
+    for row_num, row in enumerate(
+        ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=10, values_only=True), start=1
+    ):
         col_a, col_b, col_c = row[0], row[1], row[2]
 
         if col_a is not None:
@@ -276,7 +356,10 @@ def parse_timetable(ws, known, report):
 
         slots = {}
         for idx, cell in enumerate(row[3:9], start=1):
-            found, found_exams = parse_entries(cell, known, report)
+            # Column D is 4, so slot idx 1..6 sits in column idx + 3.
+            found, found_exams = parse_entries(
+                cell, known, sections_of_base, pointers.get(row_num), idx + 3, report
+            )
             for raw_code, session_num in found:
                 code = ALIASES.get(raw_code, raw_code)
                 slots.setdefault(f"s{idx}", []).append(
@@ -304,8 +387,13 @@ def build(filepath: str, term: str) -> dict:
 
     catalogue, display = parse_courses(ws)
     known = set(catalogue) | set(ALIASES)
+    sections_of_base = {}
+    for key in catalogue:
+        m = re.match(r"^(.*)\(([A-Z])\)$", key)
+        if m:
+            sections_of_base.setdefault(m.group(1), []).append(key)
     unmatched = set()
-    timetable, exams = parse_timetable(ws, known, unmatched)
+    timetable, exams = parse_timetable(ws, known, sections_of_base, unmatched)
 
     # Rewrite canonical codes to their display form for everything the UI shows.
     for day in timetable:
@@ -357,7 +445,7 @@ def build(filepath: str, term: str) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("excel", help="path to the timetable .xlsx")
-    ap.add_argument("--term", default="Term V", help='sheet/term name, e.g. "Term V"')
+    ap.add_argument("--term", default="Term VI", help='sheet/term name, e.g. "Term VI"')
     ap.add_argument("--out", default=None, help="output json path")
     args = ap.parse_args()
 

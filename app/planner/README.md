@@ -13,7 +13,9 @@ split into components so each piece is readable on its own.
 ```
 app/planner/
 ├── page.tsx            # server component — sidebar, header, loads the dataset
-├── PlannerClient.tsx   # tab shell (both tabs stay mounted; state survives switching)
+├── PlannerClient.tsx   # credit card + tab shell (both tabs stay mounted; state survives switching)
+├── CreditBudgetCard.tsx # "Your Term VI credits": credits so far, Term VI CIS, Capstone
+├── CreditBadge.tsx     # elective credits vs the student’s range, used by both tabs
 ├── ManualBuilder.tsx   # subject/section picker + clash banner + Excel export
 ├── SmartGenerator.tsx  # preference picker + ranked results
 ├── TimetableGrid.tsx   # the date × slot grid, shared by both tabs
@@ -24,8 +26,9 @@ data/termPlanner.json   # generated dataset (see below)
 scripts/parse_term_planner.py
 ```
 
-Current dataset: **Term V, 13 Sep – 19 Dec 2026** — 98 calendar days (73 with
-classes), 27 sections across 22 courses, 26 exam entries.
+Current dataset: **Term VI, 20 Dec 2026 – 6 Mar 2027** — 77 calendar days (63 with
+classes), 30 sections across 21 courses (Capstone included), 19 exam entries.
+Every course has a complete S1–S10 or S1–S20 run, with no gaps or duplicates.
 
 ## Regenerating the data each term
 
@@ -36,7 +39,7 @@ courses the student hasn't taken.
 
 ```bash
 pip install openpyxl
-python3 scripts/parse_term_planner.py "MBA 2025-27 Batch Timetable.xlsx" --term "Term V"
+python3 scripts/parse_term_planner.py "MBA 2025-27 Batch Timetable.xlsx" --term "Term VI"
 ```
 
 This overwrites `data/termPlanner.json`. Commit it and redeploy — the page is
@@ -46,6 +49,27 @@ If `data/termPlanner.json` still holds the empty placeholder, `/planner` renders
 a "timetable data missing" notice with this command rather than an empty grid.
 
 ### Things the parser handles that would otherwise corrupt the data
+
+Term VI added these:
+
+- **Comma-separated catalogue codes.** Capstone is listed as `CE (A), CE (B)` /
+  `CE (C), CE (D)` / `CE (E)`. Codes split on commas as well as newlines.
+- **Stray quote before a code.** `'GTA (B) - S4` and `- S7`. Leading quotes are stripped.
+- **Combined sessions.** `CE - S1 (Combined online session for all sections)` has
+  no section letter. A base code whose catalogue entries are all sectioned expands
+  to every section, so CE S1/S4–S8 count for CE (A)–(E). Parenthetical-only
+  fragments are notes and are skipped.
+- **Exam pointer cells.** 2–6 Mar has one merged `<= End Term Exam, 9.30 am /
+  End Term Exam, 2.30 pm =>` cell with bare codes on either side (`M&S`, `GTA (A)
+  & (B)`, `DPM`, `BSBAS`). Those become exams at the arrow’s time. The arrow cell
+  itself isn’t recorded.
+- **Multi-course exams.** `ERPS / FTM End Term Exam`. A cell that is only exam
+  text isn’t split on `/`.
+- **Month labels as text with a curly quote** (`Dec. ‘26`). Every label is now
+  rebuilt as `Dec '26`.
+
+Earlier terms:
+
 
 Each of these is real in the Term V sheet and was found by running the parser
 against it, not anticipated in advance.
@@ -84,11 +108,14 @@ against it, not anticipated in advance.
 
 The parser reports three things to stderr: codes scheduled but missing from the
 catalogue, catalogue codes never scheduled, and cell fragments it didn't read as
-classes. On Term V the first two are empty and the third is exactly the five
-holidays/notices (Diwali, Dussehra, Gandhi Jayanti, Solaris, Registration).
+classes. On Term VI the first two are empty and the third is only holidays and
+notices (Christmas, Finclave, Republic Day, Audacity, Registration, the batch
+photoshoot).
 **If that list ever contains something that looks like a class, it's a bug.**
 
 ### Known gaps in the source sheet (not parser bugs)
+
+None in Term VI. Term V had:
 
 - **CTO** has no `S14`, and `S9` appears twice (28 Oct and 9 Nov).
 - **NGO** has no `S5` or `S6`.
@@ -96,6 +123,24 @@ holidays/notices (Diwali, Dussehra, Gandhi Jayanti, Solaris, Registration).
 Verified against the raw cells — the sheet really is written that way. Neither
 affects the planner: session numbers are labels, and clash detection only cares
 which slots a section occupies.
+
+## Credits
+
+The second year must total **60–64** credits (`lib/eapCredits.ts`). The
+"Your Term VI credits" card asks for:
+
+- credits already earned in the second year (Term IV + Term V, any CIS included)
+- whether the student is taking a CIS in Term VI (+4)
+
+Capstone’s 2 credits are always counted. The card shows the elective range:
+`60 − so far − fixed` to `64 − so far − fixed`, where fixed = 2, or 6 with a CIS.
+That range becomes the cap and the target in both tabs. Capstone is required:
+both tabs list it first, keep it selected and show a lock instead of a remove
+button. Its section can still be changed (Build my own) or chosen by the
+generator, so clashes with it are checked, but it never counts toward the
+elective total. Until the card is filled in, electives are capped at 20
+(64 − the 42-credit Term IV + V minimum − 2). The inputs are saved in
+`localStorage` under `acad-planner-credits`.
 
 ## Clash detection
 
@@ -106,8 +151,8 @@ so the banner appears the instant a conflict exists.
 ## Scoring
 
 Each valid combination starts at 1000; preferences only move it relative to its
-siblings, so the absolute score is meaningless — only the ranking matters. The
-displayed percentage is the score normalized across the shown options.
+siblings, so the absolute score is meaningless — only the ranking matters, and
+the UI shows only the order (Best / 2nd / 3rd option), never the score.
 
 | Preference | Effect |
 |---|---|
@@ -115,12 +160,14 @@ displayed percentage is the score normalized across the shown options.
 | No 6:45 pm class | −50 per day with a class in `s6` |
 | Free weekends | −100 per day with a Sat/Sun class |
 | Maximise gap days | +30 per fully free day |
-| Evenly distributed | −3 × variance of per-weekday class counts |
+| Evenly distributed | −3 × variance of class counts across all seven weekdays (empty days count as 0) |
 | Minimise gaps | −10 per idle slot sandwiched between classes |
 
 `checkImpossible()` runs first and flags preferences that are arithmetically
 unsatisfiable — e.g. every section of a course meets only at 9 am. That's shown
 as a warning; generation still proceeds.
+
+Each result card shows a **Not fully met** note for every yes/no preference it misses (no 9 am, no 6:45 pm, free weekends): how many days break it and which sections cause it (`prefShortfall()`). If no clash-free option meets it fully, the note says so, so students know it is the courses, not the planner. The ranking preferences (gap days, even spread, fewer gaps) have no pass/fail and get no note.
 
 `cartesian()` refuses to enumerate past 200,000 combinations and the UI shows a
 "too many combinations" message instead of freezing the tab.

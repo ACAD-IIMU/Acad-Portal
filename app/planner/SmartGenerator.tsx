@@ -9,39 +9,47 @@
 import { useMemo, useState } from 'react';
 import type { PlannerData } from '@/lib/plannerTypes';
 import {
-  CREDIT_LIMIT,
   PREFERENCES,
   buildClashMatrix,
   comboCount,
   detectClashes,
   feasibilityFor,
   generate,
+  isCapstone,
   prefMet,
+  prefShortfall,
+  SHORTFALL_TEXT,
   validCombosFor,
   truncate,
+  type CreditBudget,
   type GenerationResult,
   type Lookups,
   type PrefId,
 } from './plannerLogic';
 import TimetableGrid from './TimetableGrid';
+import { CreditBadge, CreditHint } from './CreditBadge';
+import LockIcon from './LockIcon';
 
 const BADGES = ['Best option', '2nd option', '3rd option'];
 
 export default function SmartGenerator({
   data,
   lookups,
+  budget,
 }: {
   data: PlannerData;
   lookups: Lookups;
+  budget: CreditBudget;
 }) {
-  const [subjects, setSubjects] = useState<Set<string>>(new Set());
+  // Required courses (Capstone) are always in the selection.
+  const [subjects, setSubjects] = useState<Set<string>>(() => new Set(lookups.required));
   const [prefs, setPrefs] = useState<Set<PrefId>>(new Set());
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [openPreview, setOpenPreview] = useState<number | null>(null);
 
   const usedCredits = useMemo(
-    () => [...subjects].reduce((sum, s) => sum + lookups.creditsOf(s), 0),
+    () => [...subjects].reduce((sum, s) => sum + lookups.electiveCreditsOf(s), 0),
     [subjects, lookups]
   );
 
@@ -67,6 +75,7 @@ export default function SmartGenerator({
   );
 
   function toggleSubject(subject: string) {
+    if (isCapstone(subject)) return; // required for everyone
     setSubjects((prev) => {
       const next = new Set(prev);
       if (next.has(subject)) {
@@ -74,7 +83,7 @@ export default function SmartGenerator({
       } else {
         // Hard-stop at the credit cap rather than letting a selection be built
         // that could never be registered.
-        if (usedCredits + lookups.creditsOf(subject) > CREDIT_LIMIT) return prev;
+        if (usedCredits + lookups.electiveCreditsOf(subject) > budget.max) return prev;
         next.add(subject);
       }
       return next;
@@ -118,40 +127,40 @@ export default function SmartGenerator({
     setTimeout(() => setCopiedIndex(null), 2000);
   }
 
-  // Normalization bounds for the score bars. Seeded from the options themselves
-  // rather than from 0 — the scores cluster near 1000, so folding a 0 into the
-  // range would flatten every bar to roughly full width.
-  const scores = result?.options.map((o) => o.score) ?? [];
-  const maxScore = scores.length ? Math.max(...scores) : 0;
-  const minScore = scores.length ? Math.min(...scores) : 0;
+  // Pass/fail preferences that no clash-free option meets fully, so the
+  // disclaimer can say the miss is the courses' doing, not the planner's.
+  const unavoidable = useMemo(
+    () =>
+      new Set(
+        result
+          ? [...prefs].filter(
+              (p) => SHORTFALL_TEXT[p] && !validCombos.some((c) => prefMet(data, c, p) === true)
+            )
+          : []
+      ),
+    [result, prefs, validCombos, data]
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[290px_minmax(0,1fr)] gap-5 items-start">
       {/* ── Inputs ── */}
       <div className="flex flex-col gap-4">
         <section className="card p-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <h2 className="text-xs font-semibold text-inkFaint uppercase tracking-wider">
               Subjects
             </h2>
-            <span
-              className={`text-xs font-mono font-semibold px-2 py-1 rounded-full ${
-                usedCredits === 0
-                  ? 'text-inkFaint bg-cream'
-                  : usedCredits >= CREDIT_LIMIT
-                  ? 'text-brand-800 bg-brand-50 border border-brand-100'
-                  : 'text-inkSoft bg-cream'
-              }`}
-            >
-              {usedCredits} / {CREDIT_LIMIT}
-            </span>
+            <CreditBadge credits={usedCredits} budget={budget} />
           </div>
+          <CreditHint credits={usedCredits} budget={budget} />
 
           <div className="flex flex-col gap-1 max-h-[420px] overflow-y-auto -mx-1 px-1">
             {lookups.subjects.map((subject) => {
               const selected = subjects.has(subject);
               const credits = lookups.creditsOf(subject);
-              const wouldExceed = !selected && usedCredits + credits > CREDIT_LIMIT;
+              const capstone = isCapstone(subject);
+              const wouldExceed =
+                !selected && usedCredits + lookups.electiveCreditsOf(subject) > budget.max;
 
               // Every section of this subject collides with something already
               // chosen, so no clash-free timetable could include it. Blocked
@@ -169,17 +178,19 @@ export default function SmartGenerator({
                   ? `Clashes with ${blockers.map((b) => truncate(b, 28)).join(', ')}`
                   : 'Clashes with your current selection'
                 : wouldExceed
-                ? 'Exceeds the credit limit'
+                ? `Exceeds your maximum of ${budget.max} elective credits`
                 : null;
 
               return (
                 <button
                   key={subject}
                   onClick={() => toggleSubject(subject)}
-                  disabled={disabled}
-                  title={reason ?? undefined}
+                  disabled={disabled || capstone}
+                  title={capstone ? "Required for everyone, can't be removed" : reason ?? undefined}
                   className={`flex items-start gap-2 text-left p-2 rounded-lg border transition ${
-                    selected
+                    selected && capstone
+                      ? 'border-brand-700 bg-brand-50 cursor-default'
+                      : selected
                       ? 'border-brand-700 bg-brand-50'
                       : clashBlocked
                       ? 'border-danger bg-danger-100 cursor-not-allowed'
@@ -199,13 +210,18 @@ export default function SmartGenerator({
                   >
                     {selected ? '✓' : clashBlocked ? '!' : ''}
                   </span>
-                  <span className="min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span
-                      className={`block text-[13px] font-semibold ${
+                      className={`flex items-center gap-1.5 text-[13px] font-semibold ${
                         clashBlocked ? 'text-danger' : 'text-ink'
                       }`}
                     >
                       {subject}
+                      {capstone && (
+                        <span className="text-inkFaint">
+                          <LockIcon size={12} />
+                        </span>
+                      )}
                     </span>
                     <span
                       className={`block text-[11px] ${
@@ -215,8 +231,8 @@ export default function SmartGenerator({
                       {clashBlocked
                         ? reason
                         : `${(data.subject_sections[subject] ?? []).join(' / ')} · ${credits} cr${
-                            wouldExceed ? ' · exceeds limit' : ''
-                          }`}
+                            capstone ? ' · required for everyone' : ''
+                          }${wouldExceed ? ' · exceeds your credit range' : ''}`}
                     </span>
                   </span>
                 </button>
@@ -330,12 +346,7 @@ export default function SmartGenerator({
               </div>
             )}
 
-            {result.options.map(({ combo, score }, index) => {
-              const percent =
-                maxScore === minScore
-                  ? 100
-                  : Math.round(((score - minScore) / (maxScore - minScore)) * 70 + 30);
-
+            {result.options.map(({ combo }, index) => {
               return (
                 <article
                   key={combo.join('|')}
@@ -409,15 +420,30 @@ export default function SmartGenerator({
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="flex-1 h-1.5 rounded-full bg-cream overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-brand-700"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                    <span className="text-[11px] font-mono text-inkFaint">{percent}%</span>
-                  </div>
+                  {(() => {
+                    const misses = PREFERENCES.filter((p) => prefs.has(p.id)).flatMap((p) => {
+                      const s = prefShortfall(data, combo, p.id);
+                      const text = SHORTFALL_TEXT[p.id];
+                      return s && text ? [{ pref: p, text: text(s.days), codes: s.codes }] : [];
+                    });
+                    if (!misses.length) return null;
+                    return (
+                      <div className="mb-3 rounded-lg border border-gold-500 bg-gold-100 px-3 py-2 text-[11px] text-inkSoft">
+                        <div className="font-semibold text-gold-600">Not fully met</div>
+                        <ul className="mt-0.5 space-y-0.5">
+                          {misses.map((m) => (
+                            <li key={m.pref.id}>
+                              <span className="font-semibold text-ink">{m.pref.label}:</span> {m.text} (
+                              {m.codes.join(', ')}).
+                              {unavoidable.has(m.pref.id)
+                                ? ' None of the clash-free options for these courses avoids this completely.'
+                                : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })()}
 
                   <button
                     onClick={() => setOpenPreview(openPreview === index ? null : index)}
