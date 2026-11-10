@@ -24,6 +24,7 @@ import {
   EXAM_KIND_ICON,
   EXAM_KIND_LABEL,
   examsForSelection,
+  instructorOf,
   paletteFor,
   slotLabel,
   slotStartTime,
@@ -45,6 +46,7 @@ type ClassItem = {
   time: string;
   code: string;
   subject: string;
+  prof: string;
   sessionNum: number;
   clash: boolean;
 };
@@ -123,6 +125,7 @@ export default function MonthCalendar({
             time: slotStartTime(data, session.slot_key),
             code: entry.code,
             subject: lookups.codeToSubject[entry.code] ?? entry.code,
+            prof: instructorOf(data, entry.code),
             sessionNum: entry.session_num,
             clash: clashCells.has(`${day.date}|${session.slot_key}`) && clashCodes.has(entry.code),
           });
@@ -141,9 +144,15 @@ export default function MonthCalendar({
 
   // Legend: the selected courses, in the same order as the subject picker.
   const legend = useMemo(() => {
-    const picked = new Set(codes.map((c) => lookups.codeToSubject[c]).filter(Boolean));
-    return lookups.subjects.filter((s) => picked.has(s));
-  }, [codes, lookups]);
+    const profOf: Record<string, string> = {};
+    for (const c of codes) {
+      const subject = lookups.codeToSubject[c];
+      if (subject) profOf[subject] = instructorOf(data, c);
+    }
+    return lookups.subjects
+      .filter((s) => s in profOf)
+      .map((name) => ({ name, prof: profOf[name] }));
+  }, [codes, lookups, data]);
 
   if (!selected.size) {
     return (
@@ -200,10 +209,11 @@ export default function MonthCalendar({
       </div>
 
       <div className="flex gap-x-3 gap-y-1.5 flex-wrap text-xs text-inkSoft mb-4">
-        {legend.map((name) => (
+        {legend.map(({ name, prof }) => (
           <span key={name} className="inline-flex items-center gap-1.5">
             <i className="w-2 h-2 rounded-full inline-block" style={{ background: colorOf(name) }} />
             {name}
+            {prof && <span className="text-inkFaint">· {prof}</span>}
           </span>
         ))}
         <span className="inline-flex items-center gap-1.5">
@@ -292,7 +302,7 @@ export default function MonthCalendar({
                   ) : (
                     <div
                       key={idx}
-                      title={`${it.code} — ${it.subject}${it.sessionNum ? ` · S${it.sessionNum}` : ''}${
+                      title={`${it.code} — ${it.subject}${it.prof ? ` · ${it.prof}` : ''}${it.sessionNum ? ` · S${it.sessionNum}` : ''}${
                         it.clash ? ' · overlaps another class' : ''
                       }`}
                       className="mt-0.5 px-1.5 py-0.5 rounded text-white leading-tight"
@@ -407,6 +417,7 @@ function DayOverlay({
                     · {it.code}
                     {it.sessionNum ? ` · S${it.sessionNum}` : ''}
                   </span>
+                  {it.prof && <span className="block text-xs text-inkSoft">{it.prof}</span>}
                   {it.clash && <span className="block text-[11px] font-semibold text-danger">Overlaps another class</span>}
                 </span>
               </div>

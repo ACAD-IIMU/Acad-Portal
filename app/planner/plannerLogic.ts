@@ -121,6 +121,27 @@ export function formatDate(iso: string): string {
   return month ? `${parseInt(d, 10)} ${month}` : iso;
 }
 
+// ── PROFESSORS ─────────────────────────────────────────────────────────────
+// The catalogue on the term sheet names each section's instructor ("Prof.
+// Atanu Ghosh", "Prof. Ashish Sachdeva & Prof. Dhritiman Gupta"). Capstone is
+// written "TBD"; that, a dash or a blank cell all mean "not announced", which
+// shows as nothing rather than as a professor called "TBD".
+const NOT_ANNOUNCED = /^(tbd|tba|to be (announced|decided)|-+|n\/?a)?$/i;
+
+/** The professor for one section, or '' when the sheet hasn't named one. */
+export function instructorOf(data: PlannerData, code: string): string {
+  const name = (data.courses[code]?.instructor ?? '').trim();
+  return NOT_ANNOUNCED.test(name) ? '' : name;
+}
+
+/** The professor(s) for a course before a section is chosen: every section's,
+ *  de-duplicated. Today each course has one professor across its sections, but
+ *  a course split between two faculty would read "Prof. A / Prof. B". */
+export function instructorsOfSubject(data: PlannerData, subject: string): string {
+  const names = (data.subject_sections[subject] ?? []).map((c) => instructorOf(data, c)).filter(Boolean);
+  return [...new Set(names)].join(' / ');
+}
+
 // ── SELECTION COLOURS ──────────────────────────────────────────────────────
 // Colours for the courses in one timetable, spread evenly over the colour wheel
 // by how many there are — the home calendar's approach. Spreading over all 21

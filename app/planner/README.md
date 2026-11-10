@@ -169,6 +169,16 @@ mid-terms**. Nothing needs changing when mid-terms appear: the parser recognises
 "Mid Term Exam", "Mid-Term", "Midterm" (and "<= Mid Term Exam =>" pointer
 cells), so re-running it and redeploying is enough.
 
+## Professors
+
+Each section's professor comes from the catalogue's instructor column
+(`courses[code].instructor`). It shows under the course in both tabs' course
+lists, in each generated option's key and its copied section list, in the
+calendar legend and day pop-up, and in chip hover text; the "Build my own"
+search matches professor names too. "TBD", a dash or a blank cell means not
+announced and shows nothing (Capstone today) — `instructorOf()` in
+`plannerLogic.ts`.
+
 ## Clash detection
 
 Two selected sections in the same slot on the same day. That's the whole rule —

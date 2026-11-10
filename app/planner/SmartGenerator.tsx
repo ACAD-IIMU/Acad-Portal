@@ -15,6 +15,8 @@ import {
   detectClashes,
   feasibilityFor,
   generate,
+  instructorOf,
+  instructorsOfSubject,
   isCapstone,
   paletteFor,
   prefMet,
@@ -114,7 +116,10 @@ export default function SmartGenerator({
 
   async function copyOption(index: number, combo: string[]) {
     const text = combo
-      .map((code) => `${lookups.codeToSubject[code] ?? code} – ${code}`)
+      .map((code) => {
+        const prof = instructorOf(data, code);
+        return `${lookups.codeToSubject[code] ?? code} – ${code}${prof ? ` – ${prof}` : ''}`;
+      })
       .join('\n');
     try {
       await navigator.clipboard.writeText(text);
@@ -228,6 +233,11 @@ export default function SmartGenerator({
                         </span>
                       )}
                     </span>
+                    {instructorsOfSubject(data, subject) && (
+                      <span className="block text-[11.5px] text-inkSoft">
+                        {instructorsOfSubject(data, subject)}
+                      </span>
+                    )}
                     <span
                       className={`block text-[11px] ${
                         clashBlocked ? 'text-danger' : 'text-inkFaint'
@@ -400,6 +410,9 @@ export default function SmartGenerator({
                     {combo.map((code) => (
                       <div key={code}>
                         {code} = {lookups.codeToSubject[code] ?? code}
+                        {instructorOf(data, code) && (
+                          <span className="text-inkSoft"> · {instructorOf(data, code)}</span>
+                        )}
                       </div>
                     ))}
                   </div>

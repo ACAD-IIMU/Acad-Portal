@@ -13,6 +13,7 @@ import {
   EXAM_KIND_ICON,
   examsForSelection,
   formatDate,
+  instructorOf,
   paletteFor,
   isWeekend,
   type Lookups,
@@ -164,7 +165,9 @@ export default function TimetableGrid({
                             return (
                               <div
                                 key={`${entry.code}-${i}`}
-                                title={`${entry.code}${subject ? ` — ${subject}` : ''} · S${entry.session_num}`}
+                                title={`${entry.code}${subject ? ` — ${subject}` : ''}${
+                                  instructorOf(data, entry.code) ? ` · ${instructorOf(data, entry.code)}` : ''
+                                } · S${entry.session_num}`}
                                 className="rounded px-1.5 py-1 font-semibold border-l-[3px] whitespace-nowrap"
                                 style={
                                   isClash

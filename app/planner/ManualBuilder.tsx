@@ -11,6 +11,8 @@ import type { PlannerData } from '@/lib/plannerTypes';
 import {
   detectClashes,
   formatDate,
+  instructorOf,
+  instructorsOfSubject,
   isCapstone,
   paletteFor,
   slotLabel,
@@ -111,7 +113,8 @@ export default function ManualBuilder({
       (s) =>
         !q ||
         s.toLowerCase().includes(q) ||
-        (data.subject_sections[s] ?? []).some((c) => c.toLowerCase().includes(q))
+        (data.subject_sections[s] ?? []).some((c) => c.toLowerCase().includes(q)) ||
+        instructorsOfSubject(data, s).toLowerCase().includes(q)
     );
   }, [query, lookups.subjects, data]);
 
@@ -201,10 +204,12 @@ export default function ManualBuilder({
             const hasClash = clashCodes.has(selected);
             const [bg, fg, accent] = colorOf(subject);
             const locked = isCapstone(subject);
+            const prof = instructorOf(data, selected);
 
             return (
               <div
                 key={subject}
+                title={prof ? `${subject} — ${prof}` : subject}
                 className={`flex items-center gap-2.5 p-2.5 rounded-lg border transition ${
                   hasClash ? 'border-danger bg-danger-100' : 'border-line bg-cream'
                 }`}
@@ -217,6 +222,7 @@ export default function ManualBuilder({
                   <div className="text-[13px] font-semibold text-ink truncate">
                     {truncate(subject, 30)}
                   </div>
+                  {prof && <div className="text-[11.5px] leading-snug text-inkSoft">{prof}</div>}
                   <div className="text-[11px] text-inkFaint truncate">
                     {locked ? 'Required for everyone · pick your section' : sections.join(' / ')}
                   </div>
@@ -277,7 +283,7 @@ export default function ManualBuilder({
               setDropdownOpen(true);
             }}
             onFocus={() => setDropdownOpen(true)}
-            placeholder="Search subjects or section codes…"
+            placeholder="Search courses, codes or professors…"
             className="w-full text-[13px] px-3 py-2 border border-line rounded-lg bg-white focus:outline-none focus:border-brand-700"
           />
 
@@ -305,6 +311,11 @@ export default function ManualBuilder({
                       <span className="text-inkFaint text-[11px] ml-1.5">
                         {(data.subject_sections[subject] ?? []).join(', ')}
                       </span>
+                      {instructorsOfSubject(data, subject) && (
+                        <span className="block text-[11px] text-inkSoft">
+                          {instructorsOfSubject(data, subject)}
+                        </span>
+                      )}
                       {added && <span className="text-inkFaint text-[11px] ml-1">· added</span>}
                       {wouldExceed && (
                         <span className="text-danger text-[11px] ml-1">
