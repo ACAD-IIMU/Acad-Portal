@@ -3,12 +3,20 @@
 // The date × session-slot grid, shared by the manual builder (full term) and the
 // smart generator's per-option preview (`compact`, slightly tighter rows). Both
 // show every day of the term; days without a selected class read "No classes".
+// Exams for the selected courses sit as gold chips in the slot they're in.
 
 'use client';
 
 import type React from 'react';
 import type { Clash, PlannerData } from '@/lib/plannerTypes';
-import { formatDate, isWeekend, type Lookups } from './plannerLogic';
+import {
+  EXAM_KIND_ICON,
+  examsForSelection,
+  formatDate,
+  paletteFor,
+  isWeekend,
+  type Lookups,
+} from './plannerLogic';
 
 export default function TimetableGrid({
   data,
@@ -24,6 +32,15 @@ export default function TimetableGrid({
   compact?: boolean;
 }) {
   const selected = new Set(codes);
+  const colorOf = paletteFor(lookups, codes);
+
+  // "date|slot" -> exams for the selected courses in that cell.
+  const examsByCell: Record<string, ReturnType<typeof examsForSelection>> = {};
+  const examDates = new Set<string>();
+  for (const e of examsForSelection(lookups.exams, codes)) {
+    (examsByCell[`${e.date}|${e.slot}`] ??= []).push(e);
+    examDates.add(e.date);
+  }
 
   if (!selected.size) {
     return (
@@ -104,7 +121,7 @@ export default function TimetableGrid({
                   <div className="text-inkFaint text-[10px]">{formatDate(day.date)}</div>
                 </td>
 
-                {!hasClass(day) ? (
+                {!hasClass(day) && !examDates.has(day.date) ? (
                   <td
                     colSpan={data.sessions.length}
                     className={`px-2 border-b border-line align-middle text-inkFaint italic ${
@@ -118,19 +135,30 @@ export default function TimetableGrid({
                     selected.has(e.code)
                   );
                   const cellClashes = clashCells.has(`${day.date}|${session.slot_key}`);
+                  const cellExams = examsByCell[`${day.date}|${session.slot_key}`] ?? [];
 
                   return (
                     <td
                       key={session.slot_key}
                       className="px-1.5 py-1.5 border-b border-line align-top"
                     >
+                      {cellExams.map((e, i) => (
+                        <div
+                          key={`exam-${i}`}
+                          title={`${e.label} exam · ${e.time}`}
+                          className="rounded px-1.5 py-1 mb-1 font-semibold border border-gold-500 bg-white text-gold-600 whitespace-nowrap"
+                        >
+                          {EXAM_KIND_ICON[e.kind]} {e.label} · {e.time}
+                        </div>
+                      ))}
                       {entries.length === 0 ? (
+                        cellExams.length ? null :
                         <span className="text-line select-none">·</span>
                       ) : (
                         <div className="flex flex-col gap-1">
                           {entries.map((entry, i) => {
                             const subject = lookups.codeToSubject[entry.code] ?? '';
-                            const [bg, fg, accent] = lookups.colorOf(subject);
+                            const [bg, fg, accent] = colorOf(subject);
                             const isClash = cellClashes && clashCodes.has(entry.code);
 
                             return (

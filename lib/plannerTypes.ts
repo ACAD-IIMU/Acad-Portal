@@ -36,12 +36,21 @@ export interface PlannerDay {
   slots: Partial<Record<PlannerSlotKey, PlannerEntry[]>>;
 }
 
+/** An exam as written in the sheet, e.g. "ERPS / FTM End Term Exam => 2.30 pm".
+ *  Kept as raw text; plannerLogic.buildExams() reads the courses, kind and time. */
+export interface PlannerExam {
+  date: string;         // YYYY-MM-DD
+  slot: string;         // the column it sits in ("s1"…"s6") — the time is in the text
+  text: string;
+}
+
 export interface PlannerData {
   term: string;                                   // "Term VI"
   sessions: PlannerSession[];
   courses: Record<string, PlannerCourse>;         // section code -> course
   subject_sections: Record<string, string[]>;     // course name -> section codes
   timetable: PlannerDay[];
+  exams?: PlannerExam[];                          // end-term / mid-term exams (absent in old datasets)
 }
 
 export interface Clash {

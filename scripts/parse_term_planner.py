@@ -116,12 +116,18 @@ NOTE_RE = re.compile(r"^\(.*\)$")
 # slots ("=> 9.30 am" / "=> 2.30 pm"). Collected separately so nothing is lost
 # silently, but kept out of `slots` — clash detection is about class timetables.
 EXAM_MARKERS = ("end term exam", "mid term exam", "exam tbd", "end term exams")
+# Mid-terms are spelled every which way ("Mid Term Exam", "Mid-Term", "Midterm",
+# "MID TERM") and sometimes without the word "exam". Term VI has none, but the
+# portal shows them the moment the sheet carries one, so match them all.
+EXAM_RE = re.compile(r"\b(end|mid)[\s-]*terms?\b[\s-]*exams?|\bmid[\s-]*terms?\b|exam\s*tbd", re.IGNORECASE)
 
 # Term VI's last week has one merged cell "<= End Term Exam, 9.30 am / End Term
 # Exam, 2.30 pm =>" spanning several rows, with bare course codes ("M&S", "GTA (A)
 # & (B)") on either side of it. The arrow cell is a pointer, not an exam; the
 # bare codes beside it are the exams.
-POINTER_RE = re.compile(r"^<=\s*end term exam|end term exam.*=>$", re.IGNORECASE)
+POINTER_RE = re.compile(
+    r"^<=\s*(end|mid)[\s-]*term\s*exam|(end|mid)[\s-]*term\s*exam.*=>$", re.IGNORECASE
+)
 TIME_RE = re.compile(r"(\d{1,2}[.:]\d{2}\s*[ap]m)", re.IGNORECASE)
 
 
@@ -211,7 +217,7 @@ def parse_courses(ws):
 
 def is_exam(text: str) -> bool:
     low = text.lower()
-    return any(marker in low for marker in EXAM_MARKERS)
+    return any(marker in low for marker in EXAM_MARKERS) or bool(EXAM_RE.search(text))
 
 
 def parse_entries(cell_text, known, sections_of_base, pointer, col, report):
@@ -288,9 +294,9 @@ def parse_entries(cell_text, known, sections_of_base, pointer, col, report):
         # A bare course code beside an "<= End Term Exam =>" pointer is its exam.
         jb = JOINT_BARE_RE.match(part)
         if pointer and (is_course(canon(part)) or (jb and is_course(canon(jb.group(1))))):
-            first_col, last_col, left_time, right_time = pointer
+            first_col, last_col, left_time, right_time, kind = pointer
             time = left_time if col < first_col else right_time if col > last_col else None
-            exams.append(f"{part} End Term Exam" + (f" => {time}" if time else ""))
+            exams.append(f"{part} {kind} Exam" + (f" => {time}" if time else ""))
             continue
 
         report.add(part)
@@ -299,15 +305,19 @@ def parse_entries(cell_text, known, sections_of_base, pointer, col, report):
 
 
 def find_exam_pointers(ws):
-    """Row number -> (first_col, last_col, left_time, right_time) for every row an
-    "<= End Term Exam ... =>" cell covers, following merged ranges down."""
+    """Row number -> (first_col, last_col, left_time, right_time, kind) for every row an
+    "<= End Term Exam ... =>" (or Mid Term) cell covers, following merged ranges down."""
     merged = {(r.min_row, r.min_col): r for r in ws.merged_cells.ranges}
     pointers = {}
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=4, max_col=9):
         for cell in row:
             v = cell.value
-            if not isinstance(v, str) or not re.search(r"<=|=>", v) or "end term exam" not in v.lower():
+            if not isinstance(v, str) or not re.search(r"<=|=>", v):
                 continue
+            kind_m = re.search(r"\b(end|mid)[\s-]*term\s*exam", v, re.IGNORECASE)
+            if not kind_m:
+                continue
+            kind = "Mid Term" if kind_m.group(1).lower() == "mid" else "End Term"
             parts = [" ".join(p.split()) for p in v.split("\n")]
             if not any(POINTER_RE.search(p) for p in parts):
                 continue
@@ -319,7 +329,7 @@ def find_exam_pointers(ws):
             r1, r2 = (rng.min_row, rng.max_row) if rng else (cell.row, cell.row)
             c1, c2 = (rng.min_col, rng.max_col) if rng else (cell.column, cell.column)
             for r in range(r1, r2 + 1):
-                pointers[r] = (c1, c2, left_time, right_time)
+                pointers[r] = (c1, c2, left_time, right_time, kind)
     return pointers
 
 

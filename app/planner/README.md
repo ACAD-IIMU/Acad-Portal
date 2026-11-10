@@ -18,7 +18,9 @@ app/planner/
 ├── CreditBadge.tsx     # elective credits vs the student’s range, used by both tabs
 ├── ManualBuilder.tsx   # subject/section picker + clash banner + Excel export
 ├── SmartGenerator.tsx  # preference picker + ranked results
-├── TimetableGrid.tsx   # the date × slot grid, shared by both tabs
+├── PlannerCalendar.tsx # Month / List switch used by both tabs (Month is the default)
+├── MonthCalendar.tsx   # month view — same layout as the home screen calendar
+├── TimetableGrid.tsx   # List view: the date × slot grid, shared by both tabs
 └── plannerLogic.ts     # pure logic: colours, scoring, combination search
 
 lib/plannerTypes.ts     # dataset shape + detectClashes()
@@ -141,6 +143,31 @@ generator, so clashes with it are checked, but it never counts toward the
 elective total. Until the card is filled in, electives are capped at 20
 (64 − the 42-credit Term IV + V minimum − 2). The inputs are saved in
 `localStorage` under `acad-planner-credits`.
+
+## Month view, List view and exams
+
+Both tabs show the selected timetable as a **month calendar** by default — the
+same layout as the home screen (`app/home/MonthView.tsx`): ‹ › month arrows, a
+Sun–Sat grid, a legend, and a pop-up with the full day when a date is tapped;
+phones get coloured dots. A **Month / List** switch brings back the day-by-day
+grid. The choice is shared by both tabs and saved in `localStorage` under
+`acad-planner-view`.
+
+- Chips show the section code and session (`ADM (A) · S16`) with the start time.
+- Overlapping classes turn red with ⚠, and the day gets a red outline.
+- Colours are spread over the courses *in that timetable* (`paletteFor()`), and
+  stay out of the red band so red only ever means an overlap.
+
+**Exams** come from the `exams` array the parser writes. `buildExams()` reads each
+one's courses ("ERPS / FTM", "GTA (A) & (B)", "LWDE: IS", a bare "ADM" = every
+section), its kind and its time, and the calendar shows a gold chip (🎓 end
+term, 📝 mid term) only for the courses the student has selected. An exam that
+matches no course is dropped, never shown to everyone.
+
+Term VI's sheet has 19 end-term entries covering all 21 courses and **no
+mid-terms**. Nothing needs changing when mid-terms appear: the parser recognises
+"Mid Term Exam", "Mid-Term", "Midterm" (and "<= Mid Term Exam =>" pointer
+cells), so re-running it and redeploying is enough.
 
 ## Clash detection
 

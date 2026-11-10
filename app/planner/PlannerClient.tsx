@@ -14,6 +14,7 @@ import { FALLBACK_BUDGET, buildLookups, type CreditBudget } from './plannerLogic
 import CreditBudgetCard from './CreditBudgetCard';
 import ManualBuilder from './ManualBuilder';
 import SmartGenerator from './SmartGenerator';
+import type { CalendarView } from './PlannerCalendar';
 
 type Tab = 'manual' | 'smart';
 
@@ -23,6 +24,7 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
 ];
 
 const CREDITS_KEY = 'acad-planner-credits';
+const VIEW_KEY = 'acad-planner-view';
 
 export default function PlannerClient({ data }: { data: PlannerData }) {
   const [tab, setTab] = useState<Tab>('smart');
@@ -32,6 +34,25 @@ export default function PlannerClient({ data }: { data: PlannerData }) {
   const [soFarRaw, setSoFarRaw] = useState('');
   const [term6Cis, setTerm6Cis] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+
+  // Month (default) or List — shared by both tabs, remembered on this device.
+  const [view, setView] = useState<CalendarView>('month');
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(VIEW_KEY);
+      if (saved === 'list' || saved === 'month') setView(saved);
+    } catch {
+      // storage unavailable: stay on the month view
+    }
+  }, []);
+  function changeView(v: CalendarView) {
+    setView(v);
+    try {
+      window.localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // not worth failing over
+    }
+  }
 
   useEffect(() => {
     try {
@@ -93,10 +114,10 @@ export default function PlannerClient({ data }: { data: PlannerData }) {
       {/* Both trees stay mounted so switching tabs doesn't discard a selection
           or a generated result the student is still comparing against. */}
       <div className={tab === 'manual' ? '' : 'hidden'}>
-        <ManualBuilder data={data} lookups={lookups} budget={budget} />
+        <ManualBuilder data={data} lookups={lookups} budget={budget} view={view} onViewChange={changeView} />
       </div>
       <div className={tab === 'smart' ? '' : 'hidden'}>
-        <SmartGenerator data={data} lookups={lookups} budget={budget} />
+        <SmartGenerator data={data} lookups={lookups} budget={budget} view={view} onViewChange={changeView} />
       </div>
     </div>
   );

@@ -12,12 +12,13 @@ import {
   detectClashes,
   formatDate,
   isCapstone,
+  paletteFor,
   slotLabel,
   truncate,
   type CreditBudget,
   type Lookups,
 } from './plannerLogic';
-import TimetableGrid from './TimetableGrid';
+import PlannerCalendar, { type CalendarView } from './PlannerCalendar';
 import { CreditBadge, CreditHint } from './CreditBadge';
 import LockIcon from './LockIcon';
 
@@ -27,10 +28,14 @@ export default function ManualBuilder({
   data,
   lookups,
   budget,
+  view,
+  onViewChange,
 }: {
   data: PlannerData;
   lookups: Lookups;
   budget: CreditBudget;
+  view: CalendarView;
+  onViewChange: (v: CalendarView) => void;
 }) {
   // Required courses (Capstone) start selected on their first section.
   const requiredDefaults = useMemo(
@@ -86,6 +91,8 @@ export default function ManualBuilder({
   // Same order as the course list: required first, then alphabetical.
   const chosenSubjects = lookups.subjects.filter((s) => selections[s]);
   const codes = useMemo(() => Object.values(selections).filter(Boolean), [selections]);
+  // Same colours as the calendar, so a course's dot here matches its chips there.
+  const colorOf = useMemo(() => paletteFor(lookups, codes), [lookups, codes]);
   const clashes = useMemo(() => detectClashes(data, codes), [data, codes]);
   const clashCodes = useMemo(
     () => new Set(clashes.flatMap((c) => c.codes)),
@@ -192,7 +199,7 @@ export default function ManualBuilder({
             const sections = data.subject_sections[subject];
             const selected = selections[subject];
             const hasClash = clashCodes.has(selected);
-            const [bg, fg, accent] = lookups.colorOf(subject);
+            const [bg, fg, accent] = colorOf(subject);
             const locked = isCapstone(subject);
 
             return (
@@ -341,7 +348,14 @@ export default function ManualBuilder({
           </div>
         )}
 
-        <TimetableGrid data={data} lookups={lookups} codes={codes} clashes={clashes} />
+        <PlannerCalendar
+          data={data}
+          lookups={lookups}
+          codes={codes}
+          clashes={clashes}
+          view={view}
+          onViewChange={onViewChange}
+        />
       </section>
     </div>
   );

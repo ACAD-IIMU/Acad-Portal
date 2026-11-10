@@ -16,6 +16,7 @@ import {
   feasibilityFor,
   generate,
   isCapstone,
+  paletteFor,
   prefMet,
   prefShortfall,
   SHORTFALL_TEXT,
@@ -26,7 +27,7 @@ import {
   type Lookups,
   type PrefId,
 } from './plannerLogic';
-import TimetableGrid from './TimetableGrid';
+import PlannerCalendar, { type CalendarView } from './PlannerCalendar';
 import { CreditBadge, CreditHint } from './CreditBadge';
 import LockIcon from './LockIcon';
 
@@ -36,10 +37,14 @@ export default function SmartGenerator({
   data,
   lookups,
   budget,
+  view,
+  onViewChange,
 }: {
   data: PlannerData;
   lookups: Lookups;
   budget: CreditBudget;
+  view: CalendarView;
+  onViewChange: (v: CalendarView) => void;
 }) {
   // Required courses (Capstone) are always in the selection.
   const [subjects, setSubjects] = useState<Set<string>>(() => new Set(lookups.required));
@@ -378,7 +383,7 @@ export default function SmartGenerator({
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {combo.map((code) => {
                       const subject = lookups.codeToSubject[code] ?? '';
-                      const [bg, fg, accent] = lookups.colorOf(subject);
+                      const [bg, fg, accent] = paletteFor(lookups, combo)(subject);
                       return (
                         <span
                           key={code}
@@ -454,11 +459,13 @@ export default function SmartGenerator({
 
                   {openPreview === index && (
                     <div className="mt-3">
-                      <TimetableGrid
+                      <PlannerCalendar
                         data={data}
                         lookups={lookups}
                         codes={combo}
                         clashes={detectClashes(data, combo)}
+                        view={view}
+                        onViewChange={onViewChange}
                         compact
                       />
                     </div>

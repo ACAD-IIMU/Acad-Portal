@@ -73,6 +73,7 @@ const PALETTE: [string, string, string][] = [
 
 export type Lookups = {
   subjects: string[];                       // sorted course names
+  exams: ExamItem[];                        // every exam in the sheet, matched to section codes
   codeToSubject: Record<string, string>;
   colorOf: (subject: string) => [string, string, string];
   creditsOf: (subject: string) => number;
@@ -106,6 +107,7 @@ export function buildLookups(data: PlannerData): Lookups {
     creditsOf,
     electiveCreditsOf: (subject) => (isCapstone(subject) ? 0 : creditsOf(subject)),
     required: subjects.filter(isCapstone),
+    exams: buildExams(data),
   };
 }
 
@@ -119,8 +121,49 @@ export function formatDate(iso: string): string {
   return month ? `${parseInt(d, 10)} ${month}` : iso;
 }
 
+// ── SELECTION COLOURS ──────────────────────────────────────────────────────
+// Colours for the courses in one timetable, spread evenly over the colour wheel
+// by how many there are — the home calendar's approach. Spreading over all 21
+// courses instead let a student's six picks land on neighbouring hues (four
+// greens in one test), which made the month view hard to read.
+//
+// Hues stay inside 40°–320°: the red band is kept for overlaps (and the ACAD
+// crimson), so a red chip only ever means a clash. Alternate courses are a shade
+// darker/lighter so neighbours on the wheel still separate.
+export type ColorOf = (subject: string) => [string, string, string];
+
+const GREY: [string, string, string] = ['#f1f5f9', '#334155', '#64748b'];
+
+export function paletteFor(lookups: Lookups, codes: string[]): ColorOf {
+  const picked = new Set(codes.map((c) => lookups.codeToSubject[c]).filter(Boolean));
+  const ordered = lookups.subjects.filter((s) => picked.has(s));
+  const n = ordered.length;
+  const map: Record<string, [string, string, string]> = {};
+  ordered.forEach((subject, i) => {
+    const hue = Math.round(40 + ((i + 0.5) * 280) / Math.max(n, 1));
+    const dark = i % 2 === 0;
+    map[subject] = [
+      `hsl(${hue} 70% 96%)`,
+      `hsl(${hue} ${dark ? 65 : 55}% ${dark ? 30 : 40}%)`,
+      `hsl(${hue} 65% 52%)`,
+    ];
+  });
+  return (subject) => map[subject] ?? GREY;
+}
+
 export function slotLabel(data: PlannerData, slot: string): string {
   return data.sessions.find((s) => s.slot_key === slot)?.label ?? slot;
+}
+
+/** Start of a slot as a 12-hour time, "9:00–10:30 am" -> "9:00 AM",
+ *  "12:30–2:00 pm" -> "12:30 PM", "3:00–4:30 pm" -> "3:00 PM". The label only
+ *  carries the meridiem of the end time, so the start's is inferred from the
+ *  hour: classes run 9 am – 8:15 pm, so 9–11 is morning and 12–8 is afternoon. */
+export function slotStartTime(data: PlannerData, slot: string): string {
+  const m = slotLabel(data, slot).match(/^(\d{1,2})[.:](\d{2})/);
+  if (!m) return '';
+  const h = Number(m[1]);
+  return `${h}:${m[2]} ${h >= 9 && h <= 11 ? 'AM' : 'PM'}`;
 }
 
 export function truncate(s: string, n: number): string {
@@ -496,3 +539,114 @@ export function generate(
 }
 
 export type { Clash, PlannerData };
+
+
+// ── EXAMS ──────────────────────────────────────────────────────────────────
+// The sheet writes exams as free text in the grid: "MA End Term Exam => 2.30 pm",
+// "ERPS / FTM End Term Exam => 2.30 pm", "GTA (A) & (B) End Term Exam", and
+// "LWDE: IS End Term Exam". Each is read into the section codes it applies to,
+// so the calendar shows a student only the exams for the courses they picked.
+//
+// Mid-terms use the same path: Term VI's sheet has none, but the moment one is
+// written as "<code> Mid Term Exam => <time>" (or Mid-Term / Midterm) and the
+// parser is re-run, it shows up here with no further change.
+
+export type ExamKind = 'endterm' | 'midterm' | 'exam';
+
+export interface ExamItem {
+  date: string;
+  slot: string;
+  kind: ExamKind;
+  time: string;       // "2:30 PM" — from the text, else the slot's start
+  codes: string[];    // section codes this exam is for
+  text: string;       // as written in the sheet
+}
+
+export const EXAM_KIND_LABEL: Record<ExamKind, string> = {
+  endterm: 'End Term',
+  midterm: 'Mid Term',
+  exam: 'Exam',
+};
+
+export const EXAM_KIND_ICON: Record<ExamKind, string> = {
+  endterm: '🎓',
+  midterm: '📝',
+  exam: '📅',
+};
+
+const canonCode = (s: string) => s.toUpperCase().replace(/\s+/g, '');
+const baseOf = (code: string) => code.replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+export function buildExams(data: PlannerData): ExamItem[] {
+  const byCode: Record<string, string> = {};
+  const byBase: Record<string, string[]> = {};
+  for (const code of Object.keys(data.courses)) {
+    byCode[canonCode(code)] = code;
+    (byBase[canonCode(baseOf(code))] ??= []).push(code);
+  }
+
+  const out: ExamItem[] = [];
+  for (const exam of data.exams ?? []) {
+    const [head, tail = ''] = exam.text.split('=>');
+    const kindMatch = head.match(/\b(end|mid)[\s-]*term\b/i);
+    const kind: ExamKind = !kindMatch ? 'exam' : /^mid/i.test(kindMatch[1]) ? 'midterm' : 'endterm';
+
+    // Everything before "End Term" / "Mid Term" / "Exam" is the course list.
+    const cut = kindMatch ? kindMatch.index! : head.search(/\bexams?\b/i);
+    let prefix = (cut >= 0 ? head.slice(0, cut) : head).replace(/[\s:–-]+$/, '');
+    // Occasionally the course comes after the label: "Mid Term Exam: BFC".
+    if (!prefix && cut >= 0) {
+      prefix = head
+        .slice(cut)
+        .replace(/^\s*((end|mid)[\s-]*terms?\s*)?(exams?)?\s*(tbd)?[\s:–-]*/i, '')
+        .trim();
+    }
+
+    const codes: string[] = [];
+    let previousBase = '';
+    // "/" and "," always separate courses; "&" only with spaces round it, since
+    // "B&M: D2C" and "M&S" are single codes.
+    for (const raw of prefix.split(/\s*[\/,]\s*|\s+&\s+/)) {
+      const part = raw.trim();
+      if (!part) continue;
+      // "GTA (A) & (B)": a bare "(B)" belongs to the course before it.
+      const sectionOnly = part.match(/^\(([^)]+)\)$/);
+      const candidate = sectionOnly && previousBase ? `${previousBase} (${sectionOnly[1]})` : part;
+      const key = canonCode(candidate);
+      if (byCode[key]) {
+        codes.push(byCode[key]);
+        previousBase = baseOf(byCode[key]);
+      } else if (byBase[key]) {
+        // "ADM End Term Exam" with ADM (A) and ADM (B) in the catalogue: both sections sit it.
+        codes.push(...byBase[key]);
+        previousBase = baseOf(byBase[key][0]);
+      }
+    }
+    // An exam that matches no course is never shown — showing it to everyone
+    // would put another course's exam on every student's calendar.
+    if (!codes.length) continue;
+
+    const t = tail.match(/(\d{1,2})[.:](\d{2})\s*([ap])\.?\s*m/i);
+    const time = t
+      ? `${Number(t[1])}:${t[2]} ${t[3].toUpperCase()}M`
+      : slotStartTime(data, exam.slot);
+
+    out.push({ date: exam.date, slot: exam.slot, kind, time, codes: [...new Set(codes)], text: exam.text });
+  }
+  return out;
+}
+
+/** Exams for the selected sections, labelled with the selected course codes
+ *  only ("FTM End Term", not "ERPS / FTM End Term", for a student without ERPS). */
+export function examsForSelection(
+  exams: ExamItem[],
+  codes: string[]
+): (ExamItem & { label: string })[] {
+  const selected = new Set(codes);
+  return exams.flatMap((e) => {
+    const mine = e.codes.filter((c) => selected.has(c));
+    if (!mine.length) return [];
+    const bases = [...new Set(mine.map(baseOf))].join(' & ');
+    return [{ ...e, label: `${bases} ${EXAM_KIND_LABEL[e.kind]}` }];
+  });
+}
