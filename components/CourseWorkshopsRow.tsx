@@ -203,7 +203,8 @@ export default function CourseWorkshopsRow({
             <div className="bg-brand-50/50 px-3 py-3.5 pl-8">
               <div className="flex flex-col gap-0">
                 {subjects.map((s) => {
-                  const isAbsent = s.status === 'A' || s.status === 'S_L';
+                  const canRedress =
+                    s.status === 'A' || s.status === 'S_L' || s.status === 'L' || s.status === 'C' || s.status === 'L+C';
                   return (
                     <div
                       key={s.name}
@@ -222,7 +223,7 @@ export default function CourseWorkshopsRow({
                             {STATUS_LABEL[s.status]}
                           </span>
                         )}
-                        {isAbsent && (() => {
+                        {canRedress && (() => {
                           const links = buildRedressLinks(s.name, regNo, term, batchLabel, studentEmail);
                           return (
                             <button
