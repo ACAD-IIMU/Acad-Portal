@@ -8,8 +8,8 @@
 //
 // Update these two each term — same hardcoding pattern Home uses for
 // TERM_START/TERM_END, since there's no current_term column anywhere yet.
-const CURRENT_TERM = 'Term IV';
-const BIDDING_TERM = 'Term V'; // the term being bid FOR — one ahead of CURRENT_TERM
+const CURRENT_TERM = 'Term V';
+const BIDDING_TERM = 'Term VI'; // the term being bid FOR — one ahead of CURRENT_TERM
 
 // Temporary — set back to false to restore real data for everyone. While
 // true, every student sees a static 0/1000 "will be updated shortly" view
@@ -34,7 +34,6 @@ type EapPointsRow = {
   flexi_core: number | null;
   stream_workshop: number | null;
   course_workshops: number | null;
-  course_workshops_na: boolean;
   der_1: number | null;
   der_2: number | null;
   mock_bid: number | null;
@@ -273,9 +272,9 @@ export default async function EapPointsPage() {
   }
 
   const { data: pointsData } = await supabase
-    .from('stg_eap_points_term5_v2')
+    .from('stg_eap_points_term6')
     .select(
-      'fixed, flexi_core, stream_workshop, course_workshops, course_workshops_na, der_1, der_2, mock_bid, forms_by_acad, cgpa_component, subject_representative, flexi_core_batchmeet, eap_batchmeet, pys, total'
+      'fixed, flexi_core, stream_workshop, course_workshops, der_1, der_2, mock_bid, forms_by_acad, cgpa_component, subject_representative, flexi_core_batchmeet, eap_batchmeet, pys, total'
     )
     .eq('reg_no', student.reg_no)
     .eq('term', BIDDING_TERM)
@@ -357,9 +356,9 @@ export default async function EapPointsPage() {
     { label: 'Preliminary Yearly Survey', value: points.pys, max: null, isPenalty: true },
   ];
 
-  const rows = [
+  const rows: ComponentRow[] = [
     ...topRows,
-    { label: 'Course Workshops', value: points.course_workshops, max: 210, isNA: points.course_workshops_na },
+    { label: 'Course Workshops', value: points.course_workshops, max: 210 },
     ...scoreRows,
     ...penaltyRows,
   ];
@@ -420,7 +419,7 @@ export default async function EapPointsPage() {
             <CourseWorkshopsRow
               value={points.course_workshops}
               max={210}
-              isNA={points.course_workshops_na}
+              isNA={false}
               regNo={student.reg_no}
               term={BIDDING_TERM}
               batchLabel={student.batch_label}
