@@ -12,7 +12,7 @@ import { useState } from 'react';
 
 type Subject = {
   name: string;
-  status: 'P' | 'A' | 'L' | 'S' | 'S_L' | 'NA' | null; // null = mandated but no attendance data yet
+  status: 'P' | 'A' | 'L' | 'S' | 'S_L' | 'C' | 'L+C' | 'NA' | null; // null = mandated but no attendance data yet
 };
 
 const STATUS_LABEL: Record<NonNullable<Subject['status']>, string> = {
@@ -21,10 +21,12 @@ const STATUS_LABEL: Record<NonNullable<Subject['status']>, string> = {
   L: 'Late',
   S: 'Smart Casuals',
   S_L: 'S + L (Absent)', // nets to zero credit, scored as Absent — shown with the original "S + L" wording
+  C: 'Camera Off',
+  'L+C': 'Late + Camera Off',
   NA: 'Not Applicable',
 };
 
-// P green, A red, NA gray, everything else (Late/Smart Casuals/S+L) yellow.
+// P green, A red, NA gray, everything else (Late/Smart Casuals/S+L/Camera Off) yellow.
 const STATUS_STYLE: Record<NonNullable<Subject['status']>, string> = {
   P: 'bg-[#e2f2e8] text-[#1e7a4c]',
   A: 'bg-danger-100 text-danger',
@@ -32,6 +34,8 @@ const STATUS_STYLE: Record<NonNullable<Subject['status']>, string> = {
   L: 'bg-gold-100 text-gold-600',
   S: 'bg-gold-100 text-gold-600',
   S_L: 'bg-gold-100 text-gold-600',
+  C: 'bg-gold-100 text-gold-600',
+  'L+C': 'bg-gold-100 text-gold-600',
 };
 
 // Not mailto: — mailto: defers to whatever mail client the OS/browser has

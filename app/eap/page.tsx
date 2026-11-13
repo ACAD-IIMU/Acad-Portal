@@ -110,38 +110,6 @@ function PlainRow({ row }: { row: ComponentRow }) {
   );
 }
 
-// The full 25-elective master list for this term, from the real DER Round 1
-// report (StudentWiseDemandEstimationReport) — used only when a student has
-// zero DER-1 selection rows, meaning they didn't submit DER-1 at all. Per
-// policy IV.4.4, that means they're mandated for every workshop, not none.
-const ALL_ELECTIVES = [
-  'Advanced Methods for Data Analytics',
-  'Advanced Qualitative Research Methods',
-  'Advanced Selling Skills and Management',
-  'Advertising Management & Integrated Marketing Communication',
-  'Business Applications of Artificial Intelligence',
-  'Competing through Operations',
-  'Contemporary Project Management',
-  'Crafting Meaningful Experiences',
-  'Customer Relationship Management',
-  'FINTECH',
-  'Financial Risk Management',
-  'Foreign Trade and Indirect Tax',
-  'Innovation Management',
-  "Introduction to Management Consulting - A practitioner's approach to solving client problems",
-  'Management Consulting',
-  'Marketing Analytics',
-  'Marketing for Sustainable World',
-  'Merger, Acquisition & Corporate Restructuring',
-  'Multi-Sectoral Analysis in Indian Context',
-  'Negotiations',
-  'Retail Management',
-  'Rural Marketing',
-  'Strategic Digital Supply Chain Management',
-  'Strategic Leadership and Management',
-  'Theory of Constraint',
-];
-
 export default async function EapPointsPage() {
   if (EAP_SECTION_DISABLED) {
     const staticRows: ComponentRow[] = [
@@ -282,39 +250,22 @@ export default async function EapPointsPage() {
 
   const points = pointsData as EapPointsRow | null;
 
-  const [{ data: der1Selections }, { data: attendanceRows }] = await Promise.all([
-    supabase
-      .from('eap_der1_selections')
-      .select('subject_name')
-      .eq('reg_no', student.reg_no)
-      .eq('term', BIDDING_TERM),
-    supabase
-      .from('eap_course_workshop_attendance_t5')
-      .select('subject_name, status, redress_requested')
-      .eq('reg_no', student.reg_no)
-      .eq('term', BIDDING_TERM),
-  ]);
+  // Term VI has no separate DER-1-selections source: which electives a
+  // student is mandated for is read straight off their own rows in the
+  // attendance table below — only non-NA cells from the source sheet are
+  // imported there in the first place, so "has a row" already means
+  // "mandated for this workshop."
+  const { data: attendanceRows } = await supabase
+    .from('eap_course_workshop_attendance_t6')
+    .select('subject_name, status, redress_requested')
+    .eq('reg_no', student.reg_no)
+    .eq('term', BIDDING_TERM);
 
-  // Real source of truth for "mandated": actual DER-1 picks. Zero rows means
-  // this student never submitted DER-1 at all — per policy IV.4.4, that
-  // makes every elective mandated, not none.
-  const didNotSubmitDer1 = !der1Selections || der1Selections.length === 0;
-  const mandatedSubjects = didNotSubmitDer1
-    ? ALL_ELECTIVES
-    : der1Selections.map((s) => s.subject_name);
-
-  const attendanceBySubject = new Map(
-    (attendanceRows ?? []).map((r) => [r.subject_name, r])
-  );
-
-  const courseWorkshopSubjects = mandatedSubjects.map((name) => {
-    const attendance = attendanceBySubject.get(name);
-    return {
-      name,
-      status: (attendance?.status ?? null) as 'P' | 'A' | 'L' | 'S' | 'S_L' | 'NA' | null,
-      redressRequested: attendance?.redress_requested ?? false,
-    };
-  });
+  const courseWorkshopSubjects = (attendanceRows ?? []).map((r: any) => ({
+    name: r.subject_name,
+    status: r.status as 'P' | 'A' | 'L' | 'S' | 'S_L' | 'C' | 'L+C' | 'NA' | null,
+    redressRequested: r.redress_requested ?? false,
+  }));
 
   if (!points) {
     return (
