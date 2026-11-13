@@ -20,7 +20,7 @@ const EAP_SECTION_DISABLED = false;
 // Temporary — while false, students see only the Term VI credit planner on this
 // tab: the bid points banner and component breakdown are hidden and their DB
 // queries are skipped. Set back to true to show bid points again.
-const SHOW_BID_POINTS = false;
+const SHOW_BID_POINTS = true;
 
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
