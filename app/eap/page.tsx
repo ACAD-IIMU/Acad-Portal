@@ -22,6 +22,10 @@ const EAP_SECTION_DISABLED = false;
 // queries are skipped. Set back to true to show bid points again.
 const SHOW_BID_POINTS = true;
 
+// Temporary — while false, the Term VI credit planner card is hidden
+// everywhere on this page. Set back to true to show it again.
+const SHOW_TERM6_PLANNER = false;
+
 import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 import CourseWorkshopsRow from '@/components/CourseWorkshopsRow';
@@ -234,7 +238,7 @@ export default async function EapPointsPage() {
   if (!SHOW_BID_POINTS) {
     return (
       <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
-        <Term6CreditPlanner />
+        {SHOW_TERM6_PLANNER && <Term6CreditPlanner />}
       </Shell>
     );
   }
@@ -279,9 +283,11 @@ export default async function EapPointsPage() {
             releases them.
           </p>
         </div>
-        <div className="mt-5">
-          <Term6CreditPlanner />
-        </div>
+        {SHOW_TERM6_PLANNER && (
+          <div className="mt-5">
+            <Term6CreditPlanner />
+          </div>
+        )}
       </Shell>
     );
   }
@@ -395,9 +401,11 @@ export default async function EapPointsPage() {
       </div>
 
       {/* Term VI credit planner — self-entered, no DB reads (see the component header) */}
-      <div className="mt-5">
-        <Term6CreditPlanner />
-      </div>
+      {SHOW_TERM6_PLANNER && (
+        <div className="mt-5">
+          <Term6CreditPlanner />
+        </div>
+      )}
     </Shell>
   );
 }
