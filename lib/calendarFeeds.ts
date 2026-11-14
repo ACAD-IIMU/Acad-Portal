@@ -155,22 +155,54 @@ async function addCalendars(
   return { added: added.length, problem, error };
 }
 
-// Feed keys and calendar IDs for one batch's current term, plus who has which.
-async function batchFeedState(admin: SupabaseClient, batchLabel: string) {
+// The batch-wide part of the feed state: which calendars exist and which students belong on
+// which. Loading it means downloading the whole batch's enrollments, so the per-student
+// paths (Home card, sign-in, "Add my calendars") reuse it for a few minutes per server
+// instance instead of reloading it on every page view (egress fix, Nov 2026). The only
+// cost is that a calendar created in the last few minutes may show as "not ready yet" on
+// Home a little longer. The background pass (runAutoSubscribe) always loads it fresh.
+const BATCH_MODEL_TTL_MS = 10 * 60 * 1000;
+type BatchModel = {
+  term: string;
+  model: ReturnType<typeof buildFeeds>;
+  feedRow: Map<string, { key: string; title: string; calendar_id: string | null }>;
+};
+const batchModelCache = new Map<string, { at: number; value: Promise<BatchModel> }>();
+
+async function loadBatchModel(admin: SupabaseClient, batchLabel: string): Promise<BatchModel> {
   const data = await loadBatchData(admin, batchLabel, { withTimetable: false });
   const model = buildFeeds(data);
   const rows = await fetchAll<{ key: string; title: string; calendar_id: string | null }>((from, to) =>
     admin.from('calendar_feeds').select('key, title, calendar_id').eq('batch_label', batchLabel).eq('term', data.term).range(from, to)
   );
-  const feedRow = new Map(rows.map((r) => [r.key, r]));
-  const subs = await fetchAll<{ student_id: string; feed_key: string }>((from, to) =>
-    admin
+  return { term: data.term, model, feedRow: new Map(rows.map((r) => [r.key, r])) };
+}
+
+function cachedBatchModel(admin: SupabaseClient, batchLabel: string): Promise<BatchModel> {
+  const hit = batchModelCache.get(batchLabel);
+  if (hit && Date.now() - hit.at < BATCH_MODEL_TTL_MS) return hit.value;
+  const value = loadBatchModel(admin, batchLabel);
+  batchModelCache.set(batchLabel, { at: Date.now(), value });
+  value.catch(() => batchModelCache.delete(batchLabel)); // never cache a failure
+  return value;
+}
+
+// Feed keys and calendar IDs for one batch's current term, plus who has which.
+// With onlyStudentId: subscriptions are read for that one student only (always fresh), and
+// the batch-wide part comes from the short cache above.
+async function batchFeedState(admin: SupabaseClient, batchLabel: string, onlyStudentId?: string) {
+  const { term, model, feedRow } = onlyStudentId
+    ? await cachedBatchModel(admin, batchLabel)
+    : await loadBatchModel(admin, batchLabel);
+  const subs = await fetchAll<{ student_id: string; feed_key: string }>((from, to) => {
+    let q = admin
       .from('calendar_feed_subscriptions')
       .select('student_id, feed_key, calendar_feeds!inner(batch_label, term)')
       .eq('calendar_feeds.batch_label', batchLabel)
-      .eq('calendar_feeds.term', data.term)
-      .range(from, to)
-  );
+      .eq('calendar_feeds.term', term);
+    if (onlyStudentId) q = q.eq('student_id', onlyStudentId);
+    return q.range(from, to);
+  });
   const subscribed = new Map<string, Set<string>>();
   for (const s of subs) {
     if (!subscribed.has(s.student_id)) subscribed.set(s.student_id, new Set());
@@ -216,7 +248,7 @@ export async function getStudentCalendarStatus(admin: SupabaseClient, studentId:
   if (!settings.feeds_enabled || !batchLabel || !BATCH_TERMS[batchLabel] || !settings.enabled_batches.includes(batchLabel)) {
     return { enabled: false, feeds: [], allAdded: false, needsPermission: false, confirmed: false };
   }
-  const state = await batchFeedState(admin, batchLabel);
+  const state = await batchFeedState(admin, batchLabel, studentId);
   const feeds = state.statusFor(studentId);
   const { data: token } = await admin.from('google_tokens').select(TOKEN_COLUMNS).eq('student_id', studentId).maybeSingle();
   const readyFeeds = feeds.filter((f) => f.ready);
@@ -267,7 +299,7 @@ export async function subscribeStudent(
   const { data: token } = await admin.from('google_tokens').select(TOKEN_COLUMNS).eq('student_id', studentId).maybeSingle();
   if (!tokenUsable(token as TokenRow | null)) return { added: 0, needsPermission: true, error: null };
 
-  const state = await batchFeedState(admin, batchLabel);
+  const state = await batchFeedState(admin, batchLabel, studentId);
   const todo = state.todoFor(studentId);
   if (todo.length === 0) return { added: 0, needsPermission: false, error: null };
   const result = await addCalendars(admin, token as TokenRow, todo, method);

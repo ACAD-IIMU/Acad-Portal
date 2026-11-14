@@ -162,3 +162,16 @@ created and students subscribed automatically; nothing in the past is touched.
 | acad@ gets "on hold" email | Check the sheet. If the change is real, run `control_approve_big_change.sql` |
 | Something looks wrong | `control_pause.sql`, then investigate |
 | acad@ password changed | Open the Apps Script and run `previewPlan` once to re-approve |
+
+## Egress: runs skip when nothing has changed (Nov 2026)
+
+Every run used to download the whole batch from Supabase (~2 GB/day). Now `/api/calendar/invites/plan`
+and `/api/calendar/feeds/subscribe` first ask Postgres for `calendar_sync_fingerprint()` — a hash of
+everything the sync reads, computed inside the database — and answer "nothing to do" when it matches
+the last run that found nothing to do (`lib/syncGate.ts`, `supabase/egress/step1_quiet_check.sql`).
+A full check still runs at least every 3 hours, and never skips while a vanished class is in its
+grace period. No change is needed in the Apps Script itself.
+
+Watch it in Supabase → `calendar_invite_settings`: `quiet_skipped_runs` counts skipped runs and
+`quiet_note` says why the last full run did or didn't count as quiet. Switch skipping off with
+`update calendar_invite_settings set quiet_skip_enabled = false where id = 1;`

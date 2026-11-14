@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getDeadline, waitUntil } from '@vercel/functions';
 import { createAdminClient } from '@/lib/supabase/server';
-import { buildPlan } from '@/lib/calendarInvites';
+import { buildPlan, type BatchDataCache } from '@/lib/calendarInvites';
 import { runPersonalSync } from '@/lib/personalCalendar';
+import { openGate, closeGate } from '@/lib/syncGate';
 
 // Asked by the Apps Script inside acad@iimu.ac.in every 5 minutes:
 // "what should I create, change or remove on the calendars?"
@@ -40,10 +41,27 @@ export async function POST(req: Request) {
   const started = Date.now();
   try {
     const admin = createAdminClient();
-    const plan = await buildPlan(admin, { preview: false });
+
+    // Egress fix: nothing changed since the last run that found nothing to do → answer
+    // "nothing to do" without downloading the batch (see lib/syncGate.ts).
+    const gate = await openGate(admin, 'plan');
+    if (gate.skip) {
+      await admin.from('calendar_invite_settings').update({ last_plan_at: new Date().toISOString() }).eq('id', 1);
+      return NextResponse.json({ paused: false, held: false, reason: null, totalOps: 0, ops: [], stats: {}, skipped: gate.reason });
+    }
+
+    const batchCache: BatchDataCache = new Map();
+    const plan = await buildPlan(admin, { preview: false, batchCache });
     // Not while paused or on hold — a held change must not reach students' calendars either.
-    if (!plan.paused && !plan.held) waitUntil(directInBackground(admin, started));
-    return NextResponse.json(plan);
+    if (!plan.paused && !plan.held) {
+      // The run counts as quiet only if acad@ has nothing to do AND direct mode (below)
+      // finds nothing to do either; directInBackground records the outcome.
+      const quietFp = plan.totalOps === 0 ? gate.fingerprint : null;
+      waitUntil(directInBackground(admin, started, quietFp, plan.totalOps, batchCache));
+    } else {
+      waitUntil(closeGate(admin, 'plan', null, plan.paused ? 'paused' : `held: ${plan.reason ?? ''}`));
+    }
+    return NextResponse.json({ ...plan, fullCheck: gate.reason });
   } catch (err: any) {
     console.error('calendar plan failed:', err?.message ?? err);
     return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
@@ -80,15 +98,38 @@ export async function GET(req: Request) {
   }
 }
 
-async function directInBackground(admin: ReturnType<typeof createAdminClient>, started: number) {
+async function directInBackground(
+  admin: ReturnType<typeof createAdminClient>,
+  started: number,
+  quietFp: string | null,
+  planOps: number,
+  batchCache: BatchDataCache
+) {
   const end = getDeadline()?.getTime() ?? started + maxDuration * 1000;
   // Leave time to save and finish cleanly, and never run into the next 5-minute run.
   const budget = Math.min(end - Date.now() - 20_000, started + DIRECT_WRITE_MS - Date.now());
-  if (budget < 5_000) return;
+  if (budget < 5_000) {
+    await closeGate(admin, 'plan', null, 'direct mode had no time this run');
+    return;
+  }
   try {
-    const result = await runPersonalSync(admin, budget);
+    const result = await runPersonalSync(admin, budget, undefined, batchCache);
     console.log('direct calendar sync:', JSON.stringify(result));
+    const directQuiet =
+      result.done === 0 && result.failed === 0 && result.left === 0 && result.newlyReady === 0 && result.feedsRemoved === 0;
+    if (quietFp && directQuiet) {
+      await closeGate(admin, 'plan', quietFp, 'nothing to do — later runs skip until something changes');
+    } else {
+      await closeGate(
+        admin,
+        'plan',
+        null,
+        `work found — acad@ ops ${planOps}, direct done ${result.done}, failed ${result.failed}, left ${result.left}` +
+          (result.skipped ? ` (direct: ${result.skipped})` : '')
+      );
+    }
   } catch (err: any) {
     console.error('direct calendar sync failed:', err?.message ?? err);
+    await closeGate(admin, 'plan', null, `direct sync failed: ${err?.message ?? err}`);
   }
 }
