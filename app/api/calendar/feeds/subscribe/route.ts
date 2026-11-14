@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { runAutoSubscribe } from '@/lib/calendarFeeds';
+import { openGate, closeGate } from '@/lib/syncGate';
 
 // Called by the Apps Script inside acad@ at the end of every run (every 5 minutes): adds any
 // missing ACAD section calendars for students NOT in direct mode who granted the calendar-list
@@ -27,8 +28,20 @@ function isAuthorized(req: Request): boolean {
 async function run(req: Request) {
   if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
-    const result = await runAutoSubscribe(createAdminClient(), 45_000);
-    return NextResponse.json({ ok: true, ...result });
+    const admin = createAdminClient();
+    // Egress fix: skip when nothing changed since the last pass that had nothing to add
+    // (see lib/syncGate.ts).
+    const gate = await openGate(admin, 'feeds');
+    if (gate.skip) return NextResponse.json({ ok: true, skipped: gate.reason, students: 0, added: 0, needPermission: 0, left: 0 });
+    const result = await runAutoSubscribe(admin, 45_000);
+    const quiet = result.students === 0 && result.left === 0;
+    await closeGate(
+      admin,
+      'feeds',
+      quiet ? gate.fingerprint : null,
+      quiet ? 'nothing to add' : `students ${result.students}, added ${result.added}, left ${result.left}`
+    );
+    return NextResponse.json({ ok: true, ...result, fullCheck: gate.reason });
   } catch (err: any) {
     console.error('auto-subscribe failed:', err?.message ?? err);
     return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });

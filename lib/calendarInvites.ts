@@ -929,7 +929,31 @@ const emptyStats = (term: string, grouping: 'section' | 'class'): BatchStats => 
   classesWithNoStudents: 0
 });
 
-export async function buildPlan(admin: SupabaseClient, options: { preview: boolean }): Promise<Plan> {
+// One run's batch data, shared between the plan and the direct-mode sync that follows it in
+// the same request, so the batch is downloaded once per run instead of twice (egress fix).
+// Scoped to a single request on purpose: a longer-lived cache could hand a later run data
+// older than the change it is meant to pick up.
+export type BatchDataCache = Map<string, Promise<BatchData>>;
+
+export function loadBatchDataShared(
+  admin: SupabaseClient,
+  batchLabel: string,
+  cache: BatchDataCache | undefined
+): Promise<BatchData> {
+  if (!cache) return loadBatchData(admin, batchLabel, { withTimetable: true });
+  let hit = cache.get(batchLabel);
+  if (!hit) {
+    hit = loadBatchData(admin, batchLabel, { withTimetable: true });
+    cache.set(batchLabel, hit);
+    hit.catch(() => cache.delete(batchLabel));
+  }
+  return hit;
+}
+
+export async function buildPlan(
+  admin: SupabaseClient,
+  options: { preview: boolean; batchCache?: BatchDataCache }
+): Promise<Plan> {
   const settings = await readSettings(admin);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
@@ -971,7 +995,7 @@ export async function buildPlan(admin: SupabaseClient, options: { preview: boole
   let heldReason: string | null = null;
 
   for (const batchLabel of settings.enabled_batches) {
-    const data = await loadBatchData(admin, batchLabel, { withTimetable: true });
+    const data = await loadBatchDataShared(admin, batchLabel, options.batchCache);
     const model = buildFeeds(data);
     const { entries, classesWithNoStudents } = buildClassEntries(data, model);
     const s = emptyStats(data.term, model.grouping);

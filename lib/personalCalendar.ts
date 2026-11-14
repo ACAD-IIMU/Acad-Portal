@@ -38,10 +38,11 @@ import {
   describe,
   fetchAll,
   istDateOf,
-  loadBatchData,
+  loadBatchDataShared,
   movedTwinKey,
   readSettings,
   sha1,
+  type BatchDataCache,
   type ClassEntry
 } from '@/lib/calendarInvites';
 
@@ -188,7 +189,8 @@ export type PersonalSyncResult = {
 export async function runPersonalSync(
   admin: SupabaseClient,
   budgetMs: number,
-  calendarFor: CalendarFor = defaultCalendarFor
+  calendarFor: CalendarFor = defaultCalendarFor,
+  batchCache?: BatchDataCache
 ): Promise<PersonalSyncResult> {
   const deadline = Date.now() + budgetMs;
   const now = Date.now();
@@ -241,7 +243,7 @@ export async function runPersonalSync(
     // What each eligible student should have.
     const desired = new Map<string, { studentId: string; entry: ClassEntry; hash: string }>();
     if (eligible.size > 0) {
-      const data = await loadBatchData(admin, batchLabel, { withTimetable: true });
+      const data = await loadBatchDataShared(admin, batchLabel, batchCache);
       const model = buildFeeds(data);
       const { entries } = buildClassEntries(data, model);
       for (const c of entries) {
