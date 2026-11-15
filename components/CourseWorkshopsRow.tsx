@@ -10,6 +10,10 @@
 
 import { useState } from 'react';
 
+// Temporary — while false, the Redress button is hidden for every status.
+// Set back to true to reopen redress requests.
+const REDRESS_OPEN = false;
+
 type Subject = {
   name: string;
   status: 'P' | 'A' | 'L' | 'S' | 'S_L' | 'C' | 'L+C' | 'NA' | null; // null = mandated but no attendance data yet
@@ -204,7 +208,8 @@ export default function CourseWorkshopsRow({
               <div className="flex flex-col gap-0">
                 {subjects.map((s) => {
                   const canRedress =
-                    s.status === 'A' || s.status === 'S_L' || s.status === 'L' || s.status === 'C' || s.status === 'L+C';
+                    REDRESS_OPEN &&
+                    (s.status === 'A' || s.status === 'S_L' || s.status === 'L' || s.status === 'C' || s.status === 'L+C');
                   return (
                     <div
                       key={s.name}
