@@ -44,7 +44,7 @@
  */
 
 import { writeFileSync } from 'node:fs';
-import { google, calendar_v3 } from 'googleapis';
+import { calendarForRefreshToken, type calendar_v3 } from '../lib/googleClients';
 import { createClient } from '@supabase/supabase-js';
 
 // ---------- arguments ----------
@@ -262,9 +262,7 @@ async function main() {
       error: ''
     };
 
-    const oauth = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-    oauth.setCredentials({ refresh_token: row.refresh_token });
-    const calendar = google.calendar({ version: 'v3', auth: oauth });
+    const calendar = await calendarForRefreshToken(row.refresh_token);
 
     try {
       const legacy = await listLegacyEvents(calendar);

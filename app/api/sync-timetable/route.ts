@@ -1,11 +1,33 @@
 import { NextResponse } from "next/server";
-import { google } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
-import { parseTimetableWorkbook, normalizeCode, ParsedSession, UnmappedEntry } from "@/lib/parseTimetable";
-import { parseGridTimetableWorkbook, EndTermExamEntry } from "@/lib/parseGridTimetable";
-import { extractEventsFromUnmapped } from "@/lib/parseEvents";
+// Types only (erased at build time). The parsers themselves (xlsx etc.) and the Google Drive
+// client are loaded with `await import(...)` further down, only on a run that actually has a
+// changed sheet to parse — see "CPU" below.
+import type { ParsedSession, UnmappedEntry } from "@/lib/parseTimetable";
+import type { EndTermExamEntry } from "@/lib/parseGridTimetable";
+import { driveForServiceAccount, TIMETABLE_SERVICE_ACCOUNT } from "@/lib/googleClients";
 import { TERM_5 } from "@/lib/term5";
 import { TERM_2 } from "@/lib/term2";
+
+// CPU (Nov 2026 fix — Vercel Hobby bills Active CPU, 4 h/month free):
+// cron-job.org calls this route every hour for each batch, but the timetable sheet changes only
+// a few times a week. Every call used to download the workbook, parse it (xlsx + strikethrough
+// XML) and rewrite sessions/important_events even when nothing had changed — ~2 s of CPU per call,
+// most of it on a cold start loading the parsing libraries.
+//
+// Now each call first asks Drive for the file's version (one tiny metadata call) and compares it
+// with the version this route last synced successfully (table timetable_sync_state — create it
+// with supabase/egress/step2_timetable_skip.sql). Same version → answer "unchanged" and stop:
+// nothing downloaded, no parser loaded, nothing written.
+//
+// A full sync still happens:
+//   - whenever the sheet changes (new Drive version),
+//   - after every deploy (the commit is part of the fingerprint, so parser fixes apply at once),
+//   - once a day from the Vercel Cron in vercel.json (safety net, e.g. after re-seeding
+//     subjects/sections in the database, which doesn't change the sheet),
+//   - on demand with &force=1.
+// If the state table is missing or can't be read, the route simply syncs in full as before.
+const SKIP_UNCHANGED_TABLE = "timetable_sync_state";
 
 // Protects this endpoint from being hit by anyone but Vercel Cron / you manually.
 // Vercel Cron sends this header automatically; for manual testing, pass ?secret=... instead.
@@ -55,6 +77,7 @@ const BATCH_CONFIGS: Record<
     term: string;
     batchLabel: string;
     isNativeSheet: boolean;
+    // Loaded on demand (see "CPU" above) -- importing a parser pulls in xlsx.
     parse: (buffer: Buffer, term: string) => Promise<ParseResult>;
   }
 > = {
@@ -63,7 +86,7 @@ const BATCH_CONFIGS: Record<
     term: TERM_5,
     batchLabel: "MBA 2025-27",
     isNativeSheet: false,
-    parse: parseTimetableWorkbook,
+    parse: async (buffer, term) => (await import("@/lib/parseTimetable")).parseTimetableWorkbook(buffer, term),
   },
   mba1: {
     // Same workbook as before -- it has always had both a "Term-I" and a "Term-II"
@@ -77,7 +100,7 @@ const BATCH_CONFIGS: Record<
     term: TERM_2,
     batchLabel: "MBA 2026-28",
     isNativeSheet: true,
-    parse: parseGridTimetableWorkbook,
+    parse: async (buffer, term) => (await import("@/lib/parseGridTimetable")).parseGridTimetableWorkbook(buffer, term),
   },
 };
 
@@ -111,15 +134,53 @@ export async function GET(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY! // service role — RLS doesn't apply, this runs server-side only
   );
 
-  // 1) Auth as the service account and pull the raw file bytes from Drive.
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/drive.readonly"],
-  });
-  const drive = google.drive({ version: "v3", auth });
+  // 1) Auth as the service account (drive.readonly) — light client, see lib/googleClients.ts.
+  const drive = await driveForServiceAccount(TIMETABLE_SERVICE_ACCOUNT());
+
+  // 1a) One small metadata call, shared by the settle check and the unchanged check below.
+  //     Best-effort: if it fails, both checks are skipped and the run syncs in full.
+  let meta: { modifiedTime?: string | null; version?: string | null; md5Checksum?: string | null } | null = null;
+  try {
+    meta = (await drive.files.get({ fileId: config.fileId, fields: "modifiedTime,version,md5Checksum" })).data;
+  } catch (err: any) {
+    console.warn("metadata check failed, syncing in full:", err?.message ?? err);
+  }
+
+  // 1b) Unchanged since the last successful sync → stop here (see "CPU" at the top).
+  //     The daily Vercel Cron call (Authorization header) and &force=1 always run in full.
+  const isVercelCron = req.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
+  const force = url.searchParams.get("force") === "1" || isVercelCron;
+  const fileFingerprint = meta?.version
+    ? [
+        meta.version,
+        meta.modifiedTime ?? "",
+        meta.md5Checksum ?? "",
+        TERM,
+        BATCH_LABEL,
+        process.env.VERCEL_GIT_COMMIT_SHA ?? "local",
+      ].join("|")
+    : null;
+  let lastSynced: { file_fingerprint: string; synced_at: string } | null = null;
+  if (fileFingerprint) {
+    const { data, error } = await supabase
+      .from(SKIP_UNCHANGED_TABLE)
+      .select("file_fingerprint, synced_at")
+      .eq("batch", batchParam)
+      .maybeSingle();
+    if (error) console.warn(`${SKIP_UNCHANGED_TABLE} not readable, syncing in full:`, error.message);
+    else lastSynced = data;
+  }
+  if (!force && fileFingerprint && lastSynced?.file_fingerprint === fileFingerprint) {
+    return NextResponse.json({
+      ok: true,
+      skipped: "unchanged",
+      batch: batchParam,
+      term: TERM,
+      sheetLastEdited: meta?.modifiedTime ?? null,
+      lastFullSync: lastSynced.synced_at,
+      note: "Sheet unchanged since the last full sync -- nothing downloaded or written. Add &force=1 to sync anyway.",
+    });
+  }
 
   // Optional settle window (?settle=<seconds>), used by the frequent external scheduler
   // (cron-job.org), not by the daily Vercel cron. If the sheet was edited within the
@@ -128,23 +189,18 @@ export async function GET(req: Request) {
   // cancelled when it was only moving. So skip this run; the next one picks it up once
   // the sheet has been quiet. Best-effort: if the check itself fails, sync as normal.
   const settleSeconds = Number(url.searchParams.get("settle") ?? "0");
-  if (Number.isFinite(settleSeconds) && settleSeconds > 0) {
-    try {
-      const meta = await drive.files.get({ fileId: config.fileId, fields: "modifiedTime" });
-      const modifiedAt = meta.data.modifiedTime ? Date.parse(meta.data.modifiedTime) : NaN;
-      const quietForMs = Date.now() - modifiedAt;
-      if (!Number.isNaN(modifiedAt) && quietForMs < settleSeconds * 1000) {
-        return NextResponse.json({
-          ok: true,
-          skipped: "settling",
-          batch: batchParam,
-          sheetLastEdited: meta.data.modifiedTime,
-          quietForSeconds: Math.round(quietForMs / 1000),
-          settleSeconds,
-        });
-      }
-    } catch (err: any) {
-      console.warn("settle check failed, syncing anyway:", err?.message ?? err);
+  if (Number.isFinite(settleSeconds) && settleSeconds > 0 && meta?.modifiedTime) {
+    const modifiedAt = Date.parse(meta.modifiedTime);
+    const quietForMs = Date.now() - modifiedAt;
+    if (!Number.isNaN(modifiedAt) && quietForMs < settleSeconds * 1000) {
+      return NextResponse.json({
+        ok: true,
+        skipped: "settling",
+        batch: batchParam,
+        sheetLastEdited: meta.modifiedTime,
+        quietForSeconds: Math.round(quietForMs / 1000),
+        settleSeconds,
+      });
     }
   }
 
@@ -180,6 +236,10 @@ export async function GET(req: Request) {
   //    section-block-column parser (see lib/parseGridTimetable.ts for why they're
   //    genuinely different grammars, not a config-swap of the same one).
   const { sessions, unmapped, skippedStrikethrough, endTermExams = [] } = await config.parse(buffer, TERM);
+  const [{ normalizeCode }, { extractEventsFromUnmapped }] = await Promise.all([
+    import("@/lib/parseTimetable"),
+    import("@/lib/parseEvents"),
+  ]);
 
   // 3) Resolve subject_id / section_id via the tables already populated from the
   //    enrollment import. Now scoped by batch_label as well as term -- this is the
@@ -415,10 +475,29 @@ export async function GET(req: Request) {
     }
   }
 
+  // 6) Remember which version of the sheet is now in the database, so later calls can skip
+  //    while it stays the same. Only reached when every step above succeeded. Best-effort:
+  //    if this fails, the next call just syncs in full again.
+  let skipStateSaved = false;
+  if (fileFingerprint) {
+    const { error: stateErr } = await supabase
+      .from(SKIP_UNCHANGED_TABLE)
+      .upsert(
+        { batch: batchParam, file_fingerprint: fileFingerprint, synced_at: new Date().toISOString() },
+        { onConflict: "batch" }
+      );
+    if (stateErr) console.warn(`${SKIP_UNCHANGED_TABLE} not saved:`, stateErr.message);
+    else skipStateSaved = true;
+  }
+
   return NextResponse.json({
     ok: true,
     batch: batchParam,
     term: TERM,
+    // false = the state table is missing (run supabase/egress/step2_timetable_skip.sql) or
+    // Drive gave no version -- every call will keep syncing in full until that's fixed.
+    skipStateSaved,
+    forced: force,
     sessionsProcessed: dedupedRowsToInsert.length,
     // Non-zero means the sheet states the same (subject, section, session number) more
     // than once. Not fatal any more, but worth reading -- see the de-dup block above.

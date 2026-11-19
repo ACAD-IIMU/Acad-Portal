@@ -21,7 +21,7 @@ Calendar app.
 |---|---|---|
 | Timetable sync | `app/api/sync-timetable` (portal) | Reads the timetable sheet into Supabase. Daily via Vercel, every 10 min via cron-job.org |
 | The brain | `lib/calendarInvites.ts` + `app/api/calendar/invites/plan` | Compares the timetable with what is on the calendars and lists what to change |
-| The hands | `apps-script/acad-calendar-sync.gs` (pasted into script.google.com **as acad@**) | Every 5 min: creates section calendars, changes events, reports back |
+| The hands | `apps-script/acad-calendar-sync.gs` (pasted into script.google.com **as acad@**) | Every 30 min: creates section calendars, changes events, reports back |
 | Subscribing students | `lib/calendarFeeds.ts` + `app/api/calendar/feeds/*` | Adds each student's section calendars to their own Google Calendar |
 | Phone alerts | `lib/pushNotify.ts`, `public/sw.js`, `app/api/push/subscribe` | Web Push notifications for last-minute changes |
 | Home card | `app/home/ClassCalendarCard.tsx` | "Class calendar & alerts": shows it worked, or one tap to finish |
@@ -31,7 +31,7 @@ Calendar app.
 
 - **Automatically.** Sign-in now also asks Google for permission to add calendars to the
   student's calendar list (`calendar.calendarlist` — it cannot read or change their own
-  events). Right after sign-in, and every 5 minutes in the background, the portal adds any
+  events). Right after sign-in, and every 30 minutes in the background, the portal adds any
   missing section calendars.
 - **Students who haven't signed in since this release** see a "📅 Allow & add my class
   calendars" button on Home — one tap, one Google screen, done.
@@ -46,7 +46,7 @@ direct mode the portal writes each student's classes **straight into their own m
 Calendar**, using the Google permission they already gave when they signed in to the portal.
 The main calendar shows on every phone with no setup, so **students do nothing**.
 
-- Code: `lib/personalCalendar.ts`, run every 5 minutes in the background of
+- Code: `lib/personalCalendar.ts`, run every 30 minutes in the background of
   `/api/calendar/invites/plan` — the first thing the Apps Script calls each run — so it never
   waits behind acad@'s own invite changes (no Apps Script change). ~3.5 min per run, 40 students
   at a time; each student's finished writes are saved immediately. Google's limits (600
@@ -126,7 +126,7 @@ Copy the files in, then one line at a time: `git pull`, `npm install`, `npx tsc 
 1. Chrome window signed in **only** to acad@iimu.ac.in → script.google.com → `ACAD Calendar Sync`.
 2. Select all of the code, paste the new `apps-script/acad-calendar-sync.gs` over it, Save.
 3. Choose `previewPlan` → Run (approve permissions if asked). The log should show the plan.
-   The existing 5-minute timer keeps running; no need to run `setupOnce` again.
+   The existing 30-minute timer keeps running; no need to run `setupOnce` again.
 
 ### 7. Preview (browser)
 Open `https://acad-student-portal.vercel.app/api/calendar/invites/plan?secret=YOUR_CALENDAR_SYNC_SECRET`.
@@ -134,7 +134,7 @@ Nothing changes. `emailsStudents` is `false` everywhere.
 
 ### 8. Go live (you, Supabase)
 Run `supabase/calendar-feeds/step5_turn_on_feeds.sql`. Then watch
-`supabase/calendar-feeds/check_coverage.sql`: `calendars_created` climbs by about 3 every 5
+`supabase/calendar-feeds/check_coverage.sql`: `calendars_created` climbs by about 3 every 30
 minutes, then `students_subscribed` climbs as students are added.
 
 ### 9. Later — remove the last old invites (you, when coverage is near 100%)
@@ -156,7 +156,7 @@ created and students subscribed automatically; nothing in the past is touched.
 
 | Situation | What to do |
 |---|---|
-| "Is it running?" | `check_coverage.sql` — `last_plan_at` within about 5 minutes |
+| "Is it running?" | `check_coverage.sql` — `last_plan_at` within about 30 minutes |
 | "Did students get told?" | `push_log` (newest first) — who was alerted and on how many devices |
 | A student says their calendar is missing | Ask them to open Home and tap the calendar button |
 | acad@ gets "on hold" email | Check the sheet. If the change is real, run `control_approve_big_change.sql` |

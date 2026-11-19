@@ -19,7 +19,7 @@
 // that table is what takes a student off the old guest invites — a student must never lose
 // their guest invites on the strength of a link they may not have clicked.
 
-import { google } from 'googleapis';
+import { calendarForRefreshToken } from '@/lib/googleClients';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { BATCH_TERMS, buildFeeds, fetchAll, loadBatchData, readSettings } from '@/lib/calendarInvites';
 import { CALENDARLIST_SCOPE } from '@/lib/googleScopes';
@@ -91,9 +91,7 @@ async function addCalendars(
   todo: Todo[],
   method: 'auto' | 'self'
 ): Promise<{ added: number; problem: Failure | null; error: string | null }> {
-  const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-  oauth2Client.setCredentials({ refresh_token: token.refresh_token });
-  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+  const calendar = await calendarForRefreshToken(token.refresh_token);
 
   const added: Todo[] = [];
   let problem: Failure | null = null;
