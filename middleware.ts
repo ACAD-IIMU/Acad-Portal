@@ -68,7 +68,13 @@ export const config = {
   // sw.js (the phone-alerts service worker) and manifest.webmanifest (lets students add
   // the portal to their home screen, which iPhones need for alerts) must load without a
   // login redirect too.
+  //
+  // CPU fix (Nov 2026): the three machine-only routes are excluded too, so middleware doesn't
+  // even start for them. They are called every 30–60 minutes by cron-job.org / Vercel Cron /
+  // acad@'s Apps Script, never with a student login, and each checks its own secret
+  // (SYNC_SECRET / CRON_SECRET / CALENDAR_SYNC_SECRET) — running the Supabase login check on
+  // them only cost Active CPU. They also stay in isPublicPath below as a second safety net.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'
+    '/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|api/sync-timetable|api/calendar/invites/|api/calendar/feeds/subscribe|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'
   ]
 };

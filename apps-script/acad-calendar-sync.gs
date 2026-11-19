@@ -3,7 +3,7 @@
  * ================================
  * Lives inside acad@iimu.ac.in (script.google.com), NOT in the portal.
  *
- * Every 5 minutes it:
+ * Every 30 minutes it:
  *   1. asks the portal "what should change on the calendars?"
  *        (POST /api/calendar/invites/plan)
  *   2. carries it out:
@@ -37,14 +37,16 @@ var TIME_BUDGET_MS = 4.5 * 60 * 1000;      // Apps Script stops runs at 6 minute
 var PAUSE_BETWEEN_CALLS_MS = 150;          // be gentle with Google's rate limits
 var ALERT_EVERY_HOURS = 6;                 // don't email acad@ about the same problem more often
 
-/** Run once by hand after pasting the script. Creates the 5-minute timer and shows a preview. */
+/** Run once by hand after pasting the script. Creates the 30-minute timer and shows a preview.
+ *  30, not 5: every run wakes a Vercel function, and Vercel Hobby only includes 4 CPU-hours a
+ *  month (Nov 2026). Don't lower this without checking Vercel → Usage → Fluid Active CPU. */
 function setupOnce() {
   getSecret_(); // stops here with a clear message if the secret is missing
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'runCalendarSync') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('runCalendarSync').timeBased().everyMinutes(5).create();
-  Logger.log('Timer created: runCalendarSync will run every 5 minutes.');
+  ScriptApp.newTrigger('runCalendarSync').timeBased().everyMinutes(30).create();
+  Logger.log('Timer created: runCalendarSync will run every 30 minutes.');
   previewPlan();
 }
 
@@ -82,7 +84,7 @@ function runCalendarSync() {
     }
 
     // Add missing section calendars to students' own Google Calendars. A problem here
-    // never stops the calendar sync — it is simply retried in 5 minutes.
+    // never stops the calendar sync — it is simply retried in 30 minutes.
     try {
       callPortal_('post', '/api/calendar/feeds/subscribe', {});
     } catch (e) {
@@ -93,7 +95,7 @@ function runCalendarSync() {
     if (failed.length > 0) {
       alertOnce_('failed', 'ACAD calendar sync: ' + failed.length + ' change(s) failed',
         failed.slice(0, 10).map(function (r) { return r.op + ' ' + r.summary + ' — ' + r.error; }).join('\n') +
-        '\n\nThey will be retried automatically every 5 minutes.');
+        '\n\nThey will be retried automatically every 30 minutes.');
     } else {
       PropertiesService.getScriptProperties().deleteProperty('ALERT_error');
     }

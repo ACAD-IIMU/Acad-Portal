@@ -1,4 +1,4 @@
-import { google, calendar_v3 } from 'googleapis';
+import { calendarForRefreshToken, type calendar_v3 } from '@/lib/googleClients';
 import { createAdminClient } from '@/lib/supabase/server';
 import { TERM_5 } from '@/lib/term5';
 import { TERM_2 } from '@/lib/term2';
@@ -242,13 +242,7 @@ export async function pushScheduleToCalendar(studentId: string): Promise<PushRes
     throw new Error('No Google refresh token on file — student needs to sign in again to grant Calendar access.');
   }
 
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET
-  );
-  oauth2Client.setCredentials({ refresh_token: tokenRow.refresh_token });
-
-  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+  const calendar = await calendarForRefreshToken(tokenRow.refresh_token);
 
   // This function uses the admin (service-role) client, which bypasses RLS — so unlike
   // every other query in the app, the enrollment scoping normally handled automatically

@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { runAutoSubscribe } from '@/lib/calendarFeeds';
 import { openGate, closeGate } from '@/lib/syncGate';
 
-// Called by the Apps Script inside acad@ at the end of every run (every 5 minutes): adds any
+// Called by the Apps Script inside acad@ at the end of every run (every 30 minutes): adds any
 // missing ACAD section calendars for students NOT in direct mode who granted the calendar-list
 // permission. Anything not finished is picked up on the next run.
 //

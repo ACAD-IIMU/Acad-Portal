@@ -20,12 +20,18 @@
 //     student of a changed class (this module only keeps calendars in step).
 //
 // Runs in the background of POST /api/calendar/invites/plan, which the Apps Script in acad@
-// calls at the START of every run (every 5 minutes) — so it never waits behind acad@'s own
-// invite changes. Each run works for ~3.5 minutes, ~40 students at a time, and picks up where
-// the last one stopped. Every student's finished writes are saved straight away, so nothing is
-// redone if a run is cut short.
+// calls at the START of every run (every 30 minutes) — so it never waits behind acad@'s own
+// invite changes. Each run works for up to ~3.5 minutes, ~40 students at a time, and picks up
+// where the last one stopped. Every student's finished writes are saved straight away, so
+// nothing is redone if a run is cut short.
+//
+// CPU (Nov 2026 fix — Vercel Hobby bills Active CPU, 4 h/month free):
+//   - The Google Calendar client is loaded only when there is a write to make (lib/googleClients.ts),
+//     never on a run that has nothing to do.
+//   - Writes ask Google to send back only the event id (`fields: 'id'`), not the whole event,
+//     so less JSON is parsed per call.
 
-import { google, calendar_v3 } from 'googleapis';
+import { calendarForRefreshToken, type calendar_v3 } from '@/lib/googleClients';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   BATCH_TERMS,
@@ -96,14 +102,14 @@ type Op = {
   row?: Omit<LedgerRow, 'missing_since' | 'cancelled_at'> & { cancelled_at?: string | null };
 };
 
-// Lets the sandbox simulation swap in a fake Google client.
-export type CalendarFor = (token: TokenRow) => Pick<calendar_v3.Calendar, 'events' | 'calendarList'>;
+// Lets the sandbox simulation swap in a fake Google client (may return it directly or as a promise).
+type CalendarClient = Pick<calendar_v3.Calendar, 'events' | 'calendarList'>;
+export type CalendarFor = (token: TokenRow) => CalendarClient | Promise<CalendarClient>;
 
-const defaultCalendarFor: CalendarFor = (token) => {
-  const auth = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-  auth.setCredentials({ refresh_token: token.refresh_token ?? undefined });
-  return google.calendar({ version: 'v3', auth });
-};
+const defaultCalendarFor: CalendarFor = (token) => calendarForRefreshToken(token.refresh_token);
+
+// Only the event id comes back from Google — we never read the rest of the response.
+const ID_ONLY = 'id';
 
 export const personalEventId = (studentId: string, origin: string) => `acadp${sha1(`${studentId}|${origin}`)}`;
 
@@ -379,7 +385,7 @@ export async function runPersonalSync(
   const runStudent = async (studentId: string, list: Op[]) => {
     const token = tokenById.get(studentId);
     if (!token) return;
-    const cal = calendarFor(token);
+    const cal = await calendarFor(token);
     const upserts: Record<string, unknown>[] = [];
     const deletes: string[] = [];
     for (let i = 0; i < list.length; i++) {
@@ -391,20 +397,20 @@ export async function runPersonalSync(
       try {
         if (op.kind === 'create') {
           try {
-            await cal.events.insert({ calendarId: 'primary', sendUpdates: 'none', requestBody: op.resource! });
+            await cal.events.insert({ calendarId: 'primary', sendUpdates: 'none', fields: ID_ONLY, requestBody: op.resource! });
           } catch (e) {
             if (classify(e) !== 'exists') throw e;
             // Same ID was used before (e.g. the class was removed and came back): revive it.
-            await cal.events.update({ calendarId: 'primary', eventId: op.eventId, sendUpdates: 'none', requestBody: op.resource! });
+            await cal.events.update({ calendarId: 'primary', eventId: op.eventId, sendUpdates: 'none', fields: ID_ONLY, requestBody: op.resource! });
           }
           createdCount.set(studentId, (createdCount.get(studentId) ?? 0) + 1);
           upserts.push({ ...op.row!, missing_since: null, cancelled_at: null, updated_at: new Date().toISOString() });
         } else if (op.kind === 'update' || op.kind === 'cancel') {
           try {
-            await cal.events.update({ calendarId: 'primary', eventId: op.eventId, sendUpdates: 'none', requestBody: op.resource! });
+            await cal.events.update({ calendarId: 'primary', eventId: op.eventId, sendUpdates: 'none', fields: ID_ONLY, requestBody: op.resource! });
           } catch (e) {
             if (classify(e) !== 'notFound') throw e;
-            await cal.events.insert({ calendarId: 'primary', sendUpdates: 'none', requestBody: op.resource! }); // student deleted it
+            await cal.events.insert({ calendarId: 'primary', sendUpdates: 'none', fields: ID_ONLY, requestBody: op.resource! }); // student deleted it
           }
           upserts.push({
             ...op.row!,
@@ -504,7 +510,7 @@ async function removeSectionCalendars(
     Array.from({ length: PARALLEL_FEED_REMOVALS }, async () => {
       while (next < queue.length && Date.now() < deadline) {
         const [studentId, list] = queue[next++];
-        const cal = calendarFor(tokenById.get(studentId)!);
+        const cal = await calendarFor(tokenById.get(studentId)!);
         for (const s of list) {
           if (Date.now() > deadline) break;
           try {

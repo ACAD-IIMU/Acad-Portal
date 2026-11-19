@@ -1,29 +1,20 @@
-import { google } from 'googleapis';
 import { Readable } from 'stream';
+import { driveForServiceAccount, serviceAccountAccessToken, PREREAD_SERVICE_ACCOUNT } from '@/lib/googleClients';
 
+// The Drive client is loaded only when one of these functions runs (see lib/googleClients.ts):
+// importing this file costs nothing on a cold start.
 function getDriveClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.PREREAD_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.PREREAD_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
-    },
-    // Full drive scope (not drive.readonly) — this same account both uploads (SR) and
-    // downloads (students) prereads, and is only ever shared access to the one folder
-    // it was explicitly given, so scope breadth beyond that isn't a real exposure.
-    scopes: ['https://www.googleapis.com/auth/drive']
-  });
-
-  return google.drive({ version: 'v3', auth });
+  return driveForServiceAccount(PREREAD_SERVICE_ACCOUNT());
 }
 
 export async function getFileMetadata(fileId: string) {
-  const drive = getDriveClient();
+  const drive = await getDriveClient();
   const { data } = await drive.files.get({ fileId, fields: 'id, name, mimeType' });
   return data;
 }
 
 export async function getPrereadFile(fileId: string) {
-  const drive = getDriveClient();
+  const drive = await getDriveClient();
 
   const { data: meta } = await drive.files.get({
     fileId,
@@ -39,7 +30,7 @@ export async function getPrereadFile(fileId: string) {
 }
 
 export async function uploadPrereadFile(fileName: string, mimeType: string, buffer: Buffer) {
-  const drive = getDriveClient();
+  const drive = await getDriveClient();
   const folderId = process.env.PREREAD_DRIVE_FOLDER_ID;
 
   const { data } = await drive.files.create({
@@ -59,7 +50,7 @@ export async function uploadPrereadFile(fileName: string, mimeType: string, buff
 }
 
 export async function deletePrereadFile(fileId: string) {
-  const drive = getDriveClient();
+  const drive = await getDriveClient();
   await drive.files.delete({ fileId });
 }
 
@@ -70,7 +61,7 @@ export async function deletePrereadFile(fileId: string) {
 // files. That folder needs to exist in Drive and be shared with the same
 // service account email before this will work.
 export async function uploadEapRedressProof(fileName: string, mimeType: string, buffer: Buffer) {
-  const drive = getDriveClient();
+  const drive = await getDriveClient();
   const folderId = process.env.EAP_REDRESS_DRIVE_FOLDER_ID;
 
   const { data } = await drive.files.create({
@@ -90,17 +81,7 @@ export async function uploadEapRedressProof(fileName: string, mimeType: string, 
 }
 
 export async function getPrereadAccessToken(): Promise<string> {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.PREREAD_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.PREREAD_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
-    },
-    scopes: ['https://www.googleapis.com/auth/drive']
-  });
-  const client = await auth.getClient();
-  const { token } = await client.getAccessToken();
-  if (!token) throw new Error('Failed to obtain access token');
-  return token;
+  return serviceAccountAccessToken(PREREAD_SERVICE_ACCOUNT());
 }
 
 export async function initiateResumableUpload(fileName: string, mimeType: string): Promise<string> {
