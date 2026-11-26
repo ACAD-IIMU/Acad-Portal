@@ -72,3 +72,13 @@ export const PREREAD_SERVICE_ACCOUNT = (): ServiceAccount => ({
   // it was explicitly given, so scope breadth beyond that isn't a real exposure.
   scopes: ['https://www.googleapis.com/auth/drive']
 });
+
+/** A bare access token acting as a student (for raw REST calls such as Calendar batch requests). */
+export async function accessTokenForRefreshToken(refreshToken: string | null | undefined): Promise<string> {
+  const { auth } = await import('@googleapis/calendar');
+  const oauth2Client = new auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+  oauth2Client.setCredentials({ refresh_token: refreshToken ?? undefined });
+  const { token } = await oauth2Client.getAccessToken();
+  if (!token) throw new Error('invalid_grant: no access token returned for this student');
+  return token;
+}
