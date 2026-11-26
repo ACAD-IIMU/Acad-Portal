@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { voteTableForTerm } from '@/app/sr-elections/voteTable';
 import { subjectDisplayName } from '@/lib/subjectFullNames';
+import { srElectionFor } from '@/lib/srElections';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -26,10 +27,11 @@ export async function GET(req: Request) {
 
   const { data: student } = await supabase
     .from('students')
-    .select('id')
+    .select('id, cohort')
     .eq('auth_user_id', user.id)
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
+  const { excludedSubjects } = srElectionFor(student.cohort);
 
   const admin = createAdminClient();
   const voteTable = voteTableForTerm(term);
@@ -66,7 +68,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Failed to load enrollments', detail: enrollErr.message }, { status: 500 });
   }
 
-  const votingEnrollments = (enrollments ?? []).filter((e: any) => e.subjects?.name !== 'IMC');
+  const votingEnrollments = (enrollments ?? []).filter(
+    (e: any) => !excludedSubjects.includes(e.subjects?.name)
+  );
   const subjectIds = Array.from(new Set(votingEnrollments.map((e: any) => e.subject_id)));
 
   const { data: nominations } = subjectIds.length

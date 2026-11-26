@@ -3,15 +3,11 @@
 // SR Elections — nomination + voting + results, cohort-aware. Same shell
 // pattern as EAP/Home: Sidebar wraps every return path.
 //
-// The term is resolved per-student from `cohort` — but NOT symmetrically.
-// MBA2 uses TERM_5, its live current term (lib/term5.ts). MBA1 uses TERM_2,
-// its NEXT term (lib/term2.ts) — not TERM_1, its current one. That's
-// deliberate: elections have to run before the term they're for starts, so
-// there's a rep in place from day one. Term I is 8 days from ending as of
-// this comment (26 Sep 2026) — electing a Term I rep now would barely serve
-// anyone. Term II is the term this election actually needs to staff. See
-// lib/term2.ts for the full reasoning, including the precedent this follows
-// (app/eap/page.tsx's existing "current term + 1" pattern for elective bids).
+// Which term and which phase (nominations / voting / closed) come from the
+// per-batch schedule in lib/srElections.ts — the term being elected FOR, which
+// is usually the batch's NEXT term, since a rep has to be in place from day
+// one. Before a new election opens, the page keeps showing the previous
+// term's results (Results tab only), so a new schedule can be deployed early.
 // `batch_label` isn't the right key here — that's stable for the batch's
 // whole life, while "current/next term" rotates each year.
 //
@@ -25,16 +21,13 @@
 // migration. Not urgent — flagging so it's on the record.
 //
 // Voting-table split: voteTableForTerm() returns a per-term PHYSICAL table
-// (sr_votes_term_v, sr_votes_term_ii, ...). Someone has to create
-// sr_votes_term_ii in Supabase before MBA1's voting phase opens, mirroring
-// sr_votes_term_v — this is the existing per-term operational step, just
-// applied to a second cohort's (upcoming) term for the first time. Until
-// then the page still loads fine for MBA1 (nomination + empty voting/results
-// state); only an actual vote submit would 500.
+// (sr_votes_term_v, sr_votes_term_ii, ...). It has to be created in Supabase
+// before that term's voting opens (Term VI: supabase/sr-elections-term-vi/
+// step2_vote_table.sql). Until then the page still loads; only an actual vote
+// submit would 500.
 
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { TERM_2 } from '@/lib/term2';
-import { TERM_5 } from '@/lib/term5';
+import { formatSrTime, srElectionFor, srPhase } from '@/lib/srElections';
 import { subjectDisplayName } from '@/lib/subjectFullNames';
 import Sidebar from '@/components/Sidebar';
 import UserMenu from '@/components/UserMenu';
@@ -46,33 +39,6 @@ import type { ReactNode } from 'react';
 
 // Per-student data (own enrollments, own nomination state) — never cache/serve stale.
 export const dynamic = 'force-dynamic';
-
-// Nominations close / voting opens automatically at midnight IST, 23 Sep
-// 2026 (the instant 22 Sep 2026 ends) — ACAD confirmed this exact cutoff, so
-// this is a time comparison now instead of the manual flip-and-redeploy the
-// two comments below used to describe. Change this one line if the real
-// cutoff moves. The comparison against it happens INSIDE the request
-// handler below, not up here — a plain top-level `const someBool = new
-// Date() < cutoff` evaluated at module load could get frozen at whatever
-// moment a warm serverless instance first loaded this file, and silently
-// miss the cutoff for the rest of that instance's life if it survives past
-// midnight. Mirrored the same way (not shared — no config file exists for
-// this yet) in app/api/sr-elections/nominate/route.ts and
-// app/api/sr-elections/vote/route.ts, both of which already compute their
-// own copy inside their POST handler, so this brings page.tsx in line with
-// how those two already work.
-const MBA1_NOMINATIONS_CLOSE_AT = new Date('2026-09-23T00:00:00+05:30');
-
-// Voting closes at midnight IST, 25 Sep 2026 (the instant 24 Sep 2026 ends).
-// Same reasoning as the cutoff above — computed fresh per request inside the
-// handler below, never as a top-level const, for the same warm-instance
-// staleness reason. Mirrored in app/api/sr-elections/vote/route.ts, which is
-// the real enforcement. Once this passes, resultsReady (below) flips true —
-// Results starts actually querying sr_assignments instead of showing its
-// "not open yet" placeholder; it'll show its own normal empty state ("No SR
-// assignments recorded yet") until someone tallies the closed vote and
-// inserts the winners there, same as it always has.
-const MBA1_VOTING_CLOSE_AT = new Date('2026-09-25T00:00:00+05:30');
 
 function Shell({
   batchLabel,
@@ -115,63 +81,34 @@ export default async function SrElectionsPage() {
     <UserMenu name={student.full_name} regNo={student.reg_no} batchLabel={student.batch_label} />
   );
 
-  // Which cohort this student is in decides which term constant applies —
-  // MBA1 gets TERM_2 (the term being elected FOR), MBA2 gets TERM_5 (its
-  // live current term). Every DB read below scopes by this TERM, which is
-  // the actual isolation between cohorts: an MBA1 student's sr_nominations /
-  // enrollments / sr_assignments queries only ever return Term II rows, and
-  // an MBA2 student's only ever return Term V rows, even though those tables
-  // have no batch_label column of their own. This is the same reason the
-  // earlier hard block for MBA1 could safely be removed — the "MBA1 student
-  // saw MBA2's SR roster" exposure came from the previous TERM constant being
-  // hardcoded to 'Term V' for everyone, not from anything the admin-client
-  // srAssignments query does wrong on its own; now that TERM tracks the
-  // viewer's cohort (and, for MBA1, the term ahead rather than the term now),
-  // the same query returns exactly and only that cohort's roster.
-  const TERM = student.cohort === 'MBA1' ? TERM_2 : TERM_5;
+  // The viewer's batch decides the election (lib/srElections.ts). Every DB
+  // read below scopes by TERM, which is the actual isolation between cohorts:
+  // sr_nominations / sr_assignments have no batch_label column, so an MBA1
+  // student only ever sees Term II rows and an MBA2 student Term V/VI rows.
+  // Evaluated fresh on every request, never at module load.
+  const election = srElectionFor(student.cohort);
+  const phase = srPhase(election);
 
-  // Computed fresh on every request (see the comments on the two cutoffs
-  // above for why these aren't module-level). Three real states now, not
-  // two: nomination window, voting window, and closed-awaiting-results —
-  // each with its own message where relevant, since collapsing "voting
-  // hasn't started" and "voting has closed" into one boolean was exactly
-  // the wording bug already fixed once for nominations (see the comment on
-  // nominationsOpenForViewer's message below) and would have quietly
-  // recurred here the moment this second cutoff was added.
-  const now = new Date();
-  const mba1NominationsOpen = now < MBA1_NOMINATIONS_CLOSE_AT;
-  const mba1VotingOpen = now >= MBA1_NOMINATIONS_CLOSE_AT && now < MBA1_VOTING_CLOSE_AT;
-  const mba1VotingClosed = now >= MBA1_VOTING_CLOSE_AT;
+  // Before a new election opens, keep showing the previous term's SRs.
+  const showingPrevious = phase === 'before' && Boolean(election.previousTerm);
+  const TERM = showingPrevious ? election.previousTerm! : election.term;
 
-  const nominationsOpenForViewer = student.cohort !== 'MBA1' || mba1NominationsOpen;
-  const votingOpenForViewer = student.cohort !== 'MBA1' || mba1VotingOpen;
-  // Results was previously gated on votingOpenForViewer directly — that
-  // only ever worked because voting used to have no close transition, so
-  // "voting is open" and "results aren't ready" happened to always agree.
-  // Now that voting actually closes, those two questions are genuinely
-  // different, so Results gets its own condition: ready once voting has
-  // closed, not merely while voting happens to be open.
-  const resultsReady = student.cohort !== 'MBA1' || mba1VotingClosed;
+  const nominationsOpenForViewer = phase === 'nominations';
+  const votingOpenForViewer = phase === 'voting';
+  const resultsReady = showingPrevious || phase === 'closed';
 
   let nominationContent: ReactNode;
 
-  // The single cutoff above means nominationsOpenForViewer can now only ever
-  // go from true to false one way: nominations were already open, then the
-  // cutoff passed. So this message should describe CLOSED, not "hasn't
-  // started" — that earlier wording was left over from before nominations
-  // had ever opened, and left unattended would tell a student who already
-  // submitted hours ago that nothing has happened yet, which reads as their
-  // submission having vanished. If a future term ever needs a genuine
-  // "not open yet, hasn't started" state again (a real gap before opening,
-  // not just this closes-then-voting-opens cutover), that's a different
-  // condition from this one and needs its own message, not a reuse of this.
+  // Not open: say which side of the window we're on, so a student who already
+  // nominated never reads "hasn't started" as their submission having vanished.
   if (!nominationsOpenForViewer) {
     nominationContent = (
       <p className="text-sm text-inkFaint italic card p-5">
-        Nominations are closed.{' '}
-        {mba1VotingOpen
-          ? 'Voting is now open — head to the Voting tab.'
-          : 'Voting has closed too — check the Results tab.'}
+        {phase === 'before'
+          ? `Nominations open on ${formatSrTime(election.nominationsOpenAt)}.`
+          : phase === 'voting'
+          ? 'Nominations are closed. Voting is now open — head to the Voting tab.'
+          : 'Nominations and voting have closed — check the Results tab.'}
       </p>
     );
   } else {
@@ -247,21 +184,15 @@ export default async function SrElectionsPage() {
     }
   }
 
-  const notOpenYet = (label: string) => (
-    <p className="text-sm text-inkFaint italic card p-5">
-      {label} isn&apos;t open yet — check back soon.
-    </p>
+  const notice = (text: string) => (
+    <p className="text-sm text-inkFaint italic card p-5">{text}</p>
   );
 
   const votingContent = votingOpenForViewer
     ? <VotingForm term={TERM} />
-    : mba1VotingClosed
-    ? (
-      <p className="text-sm text-inkFaint italic card p-5">
-        Voting closed. Results will be posted soon.
-      </p>
-    )
-    : notOpenYet('Voting');
+    : phase === 'closed'
+    ? notice('Voting closed. Results will be posted soon.')
+    : notice(`Voting opens on ${formatSrTime(election.nominationsCloseAt)}, once nominations close.`);
 
   // Results: read from sr_assignments directly (not re-derived from votes) — this is
   // the exact table that grants real SR access site-wide, so the list shown here can
@@ -272,15 +203,13 @@ export default async function SrElectionsPage() {
   // would only ever see rows RLS allows for the logged-in student — isn't the right
   // tool here.
   //
-  // Skipped entirely while resultsReady is false — there can't be real
-  // results yet (assignments only exist once votes are tallied, which is
-  // after voting closes), so there's no reason to make this query at all
-  // until then. This used to check votingOpenForViewer, back when voting
-  // had no close transition of its own — see resultsReady's definition
-  // above for why that stopped being the right condition to use here.
+  // Skipped entirely while resultsReady is false — assignments only exist once
+  // votes are tallied, after voting closes, so there's nothing to query yet.
   let resultsContent: ReactNode;
   if (!resultsReady) {
-    resultsContent = notOpenYet('Results');
+    resultsContent = notice(
+      `Results are posted after voting closes on ${formatSrTime(election.votingCloseAt)}.`
+    );
   } else {
     const admin = createAdminClient();
     const { data: srAssignments } = await admin
@@ -341,25 +270,31 @@ export default async function SrElectionsPage() {
   return (
     <Shell batchLabel={student.batch_label} cohort={student.cohort} userMenu={userMenu}>
       <div className="flex flex-col gap-5">
-        <h1 className="text-2xl">SR Elections — {TERM}</h1>
+        <div>
+          <h1 className="text-2xl">SR Elections — {TERM}</h1>
+          {!showingPrevious && (
+            <p className="text-inkFaint text-sm mt-1">
+              Nominations {formatSrTime(election.nominationsOpenAt)} – {formatSrTime(election.nominationsCloseAt)}
+              {' · '}Voting until {formatSrTime(election.votingCloseAt)}
+            </p>
+          )}
+        </div>
+        {showingPrevious && (
+          <p className="card p-4 text-sm text-inkSoft border-brand-100 bg-brand-50">
+            {election.term} SR nominations open on{' '}
+            <b className="text-ink">{formatSrTime(election.nominationsOpenAt)}</b>. Until then, here are
+            your {TERM} Subject Representatives.
+          </p>
+        )}
         <SrElectionsTabs
           nomination={nominationContent}
           voting={votingContent}
           results={resultsContent}
-          // showVotingAndResults intentionally NOT passed here (defaults to
-          // true in Tabs.tsx) — the tab switcher itself is always visible for
-          // MBA1 now, even while voting is closed, so students can see
-          // Voting/Results exist rather than only ever seeing Nomination.
-          // votingOpenForViewer above still fully controls what's actually
-          // rendered UNDER those tabs (see votingContent/resultsContent).
-          //
-          // Opposite situation for MBA2/Term V: its election already happened
-          // and is done, not "not yet ready" — Nomination/Voting have nothing
-          // left to do, so this locks the page straight to Results (every
-          // subject's assigned SR), matching the nav link staying visible.
-          // Manual, per-term toggle — revisit alongside HIDDEN_FOR_MBA2 in
-          // components/Sidebar.tsx once Term VI is the current term.
-          resultsOnly={student.cohort === 'MBA2'}
+          // Before the new election opens, only the previous term's Results
+          // are shown — there's nothing to nominate or vote for yet.
+          resultsOnly={showingPrevious}
+          // Land on the tab a student can act on in each phase.
+          initialTab={phase === 'voting' ? 'voting' : phase === 'closed' ? 'results' : 'nomination'}
         />
       </div>
     </Shell>

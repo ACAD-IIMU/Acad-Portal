@@ -20,11 +20,10 @@
 // own Term-I / Term-II tabs (Sr. / Course Title / Credits / Code /
 // Instructor/s columns) -- read directly from that file, not guessed.
 //
-// Only covers MBA1's known Term I / Term II codes. Any other (term, code)
-// pair -- including all of MBA2's, which already store full names in
-// `subjects.name` and were never part of this short-code scheme -- falls
-// through unchanged via subjectDisplayName()'s fallback below, so this is
-// safe to call on ANY subject name from ANY cohort/term.
+// Covers MBA1's Term I / Term II codes and MBA2's Term VI codes. Any other
+// (term, code) pair -- e.g. MBA2's Term IV/V rows -- falls through unchanged
+// via subjectDisplayName()'s fallback below, so this is safe to call on ANY
+// subject name from ANY cohort/term.
 const FULL_NAMES: Record<string, Record<string, string>> = {
   'Term I': {
     FRA: 'Financial Reporting and Analysis',
@@ -55,8 +54,39 @@ const FULL_NAMES: Record<string, Record<string, string>> = {
     // migration run alongside this edit) — keeping this file's key out of
     // sync with that rename would silently stop showing the full title again.
     WAC: 'Written Analysis for Communication-II'
+  },
+  // MBA2 (2025-27) Term VI — from the Term VI tab's course catalogue
+  // (data/termPlanner.json). subjects.name for Term VI stores these codes,
+  // like MBA1's terms, so timetable sync can match them.
+  'Term VI': {
+    ADM: 'Advanced Digital Marketing',
+    BECON: 'Behavioral Economics',
+    BSBAS: 'Building Successful Brand Architecture & Systems',
+    'B&M: D2C': 'Building and Managing D2C Brands',
+    BFC: 'Business Forecasting',
+    CE: 'Capstone Exercise',
+    DWV: 'Data Warehousing & Visualization',
+    DPM: 'Digital Product Management',
+    ERPS: 'ERP Systems: Technology Planning & Implementation',
+    FIS: 'Fixed Income Securities',
+    FTM: 'Forex and Treasury Management',
+    GTA: 'Game Theory Applications',
+    HF: 'Hedge Funds - History, Strategies and Market Practices',
+    ICA: 'Industry & Competitor Analysis',
+    IMS: 'International Marketing Strategy',
+    'LWDE:IS': 'Leadership Wisdom for Decision Excellence: Insights from Scriptures',
+    LGS: 'Logistics and Supply Chain Analytics',
+    'M&S': 'Marketing & Society',
+    MA: 'Marketing Analytics',
+    MPBS: 'Multi-sided Platform Business Strategy',
+    SF: 'Sustainable Finance'
   }
 };
+
+// Same loose match as timetable sync's normalizeCode() (lib/parseTimetable.ts,
+// not imported here because it pulls in the xlsx parser): case, spaces and
+// punctuation ignored, so 'B&M:D2C' finds 'B&M: D2C'.
+const loose = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 /**
  * Returns the full descriptive subject title for a (code, term) pair if
@@ -66,5 +96,10 @@ const FULL_NAMES: Record<string, Record<string, string>> = {
  */
 export function subjectDisplayName(code: string | null | undefined, term: string): string {
   if (!code) return '';
-  return FULL_NAMES[term]?.[code] ?? code;
+  const names = FULL_NAMES[term];
+  if (!names) return code;
+  if (names[code]) return names[code];
+  const key = loose(code);
+  const hit = Object.keys(names).find((k) => loose(k) === key);
+  return hit ? names[hit] : code;
 }

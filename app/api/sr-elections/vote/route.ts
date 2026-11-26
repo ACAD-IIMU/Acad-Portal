@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { voteTableForTerm } from '@/app/sr-elections/voteTable';
+import { formatSrTime, srElectionFor, srPhase } from '@/lib/srElections';
 
 type Vote = { subjectId: string; sectionId: string | null; candidateStudentId: string };
 
@@ -27,24 +28,15 @@ export async function POST(req: Request) {
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
 
-  // Mirrors app/sr-elections/page.tsx's two cutoffs, same reasoning as
-  // nominate/route.ts's own mirror: the page-level gate only swaps out what
-  // renders under the Voting tab, it can't stop a direct POST here on its
-  // own — this check is the real enforcement. Computed fresh on every
-  // request. Now bounded on both sides (opens after nominations close,
-  // closes at its own cutoff) — it used to only check the open side, back
-  // when voting had no close transition, so "not open yet" was the only
-  // possible rejection reason; now that it can also be CLOSED, the message
-  // needs to say which one actually happened, same wording lesson as
-  // nominate/route.ts already learned once.
-  const MBA1_NOMINATIONS_CLOSE_AT = new Date('2026-09-23T00:00:00+05:30');
-  const MBA1_VOTING_CLOSE_AT = new Date('2026-09-25T00:00:00+05:30');
-  const now = new Date();
-  const MBA1_VOTING_OPEN = now >= MBA1_NOMINATIONS_CLOSE_AT && now < MBA1_VOTING_CLOSE_AT;
-  if (student.cohort === 'MBA1' && !MBA1_VOTING_OPEN) {
-    const message = now >= MBA1_VOTING_CLOSE_AT
-      ? 'Voting is closed for your batch.'
-      : 'Voting is not open yet for your batch.';
+  // The real enforcement of the schedule in lib/srElections.ts — the page only
+  // swaps out what renders under the Voting tab. Evaluated fresh per request.
+  const election = srElectionFor(student.cohort);
+  const phase = srPhase(election);
+  if (phase !== 'voting') {
+    const message =
+      phase === 'closed'
+        ? 'Voting is closed for your batch.'
+        : `Voting opens on ${formatSrTime(election.nominationsCloseAt)}.`;
     return NextResponse.json({ error: message }, { status: 403 });
   }
 
@@ -59,6 +51,10 @@ export async function POST(req: Request) {
   const votes = body.votes ?? [];
 
   if (!term) return NextResponse.json({ error: 'Missing term' }, { status: 400 });
+  // Only the term currently up for election — the client sends it, so never trust it as-is.
+  if (term !== election.term) {
+    return NextResponse.json({ error: `Voting is only open for ${election.term}` }, { status: 400 });
+  }
   if (votes.length === 0) return NextResponse.json({ error: 'No votes provided' }, { status: 400 });
 
   const uniqueSubjectIds = new Set(votes.map((v) => v.subjectId));
@@ -89,7 +85,8 @@ export async function POST(req: Request) {
   }
 
   // Every vote must be for a subject/section the student is actually
-  // enrolled in, and not IMC (voting for it already happened separately).
+  // enrolled in, and not one this election excludes (Term V's IMC was voted
+  // separately; see excludedSubjects in lib/srElections.ts).
   const { data: enrollments, error: enrollErr } = await supabase
     .from('enrollments')
     .select('subject_id, section_id, subjects(name)')
@@ -103,7 +100,7 @@ export async function POST(req: Request) {
   }
   const enrolledKeys = new Set(
     (enrollments ?? [])
-      .filter((e: any) => e.subjects?.name !== 'IMC')
+      .filter((e: any) => !election.excludedSubjects.includes(e.subjects?.name))
       .map((e: any) => `${e.subject_id}::${e.section_id ?? 'null'}`)
   );
   for (const v of votes) {
