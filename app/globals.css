@@ -58,3 +58,55 @@ h1, h2, h3 {
   .sr-launch-in { animation: none; }
   .sr-launch-in::after { display: none; }
 }
+
+/* Sidebar easter egg (components/Sidebar.tsx): while an SR election is live, the
+   SR Elections item glows like a quest marker — a breathing gold aura, a loot
+   shine sweeping across, and a twinkling sparkle. Calmer on the page itself. */
+.sr-quest {
+  color: #fff;
+  background-image: linear-gradient(110deg, transparent 35%, rgba(255, 214, 150, 0.32) 50%, transparent 65%);
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  animation:
+    sr-quest-breathe 2.4s ease-in-out infinite,
+    sr-quest-shine 3.6s ease-in-out infinite;
+}
+.sr-quest-calm {
+  animation: sr-quest-breathe 4s ease-in-out infinite;
+  background-image: none;
+}
+.sr-quest-sparkle {
+  color: #e8a94c;
+  font-size: 12px;
+  line-height: 1;
+  text-shadow: 0 0 6px rgba(232, 169, 76, 0.9);
+  animation: sr-quest-twinkle 1.8s ease-in-out infinite;
+}
+.sr-quest-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #e8a94c;
+  box-shadow: 0 0 0 0 rgba(232, 169, 76, 0.7);
+  animation: sr-quest-ping 1.8s ease-out infinite;
+}
+@keyframes sr-quest-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(232, 169, 76, 0.35), 0 0 8px 0 rgba(232, 169, 76, 0.25); }
+  50%      { box-shadow: 0 0 0 1px rgba(232, 169, 76, 0.75), 0 0 18px 3px rgba(232, 169, 76, 0.45); }
+}
+@keyframes sr-quest-shine {
+  0%, 35% { background-position: 130% 0; }
+  75%, 100% { background-position: -30% 0; }
+}
+@keyframes sr-quest-twinkle {
+  0%, 100% { opacity: 0.55; transform: scale(0.85) rotate(0deg); }
+  50%      { opacity: 1; transform: scale(1.25) rotate(25deg); }
+}
+@keyframes sr-quest-ping {
+  0%   { box-shadow: 0 0 0 0 rgba(232, 169, 76, 0.7); }
+  80%, 100% { box-shadow: 0 0 0 7px rgba(232, 169, 76, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sr-quest, .sr-quest-calm, .sr-quest-sparkle, .sr-quest-dot { animation: none; }
+  .sr-quest { box-shadow: 0 0 0 1px rgba(232, 169, 76, 0.6), 0 0 12px 1px rgba(232, 169, 76, 0.35); background-image: none; }
+}
