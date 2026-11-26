@@ -11,6 +11,7 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { formatSrTime, srElectionFor, srPhase } from '@/lib/srElections';
 
 const MAX_PICKS = 3;
 
@@ -31,21 +32,19 @@ export async function POST(req: Request) {
     .single();
   if (!student) return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
 
-  // Mirrors app/sr-elections/page.tsx's MBA1_NOMINATIONS_CLOSE_AT — kept in
-  // sync manually (no shared config file for this yet). This is the real
-  // enforcement; the page-level gate only swaps out the form, it can't stop
-  // a direct POST here on its own. Computed fresh on every request, same as
-  // page.tsx does — see that file's comment for why a module-level const
-  // would risk going stale in a warm serverless instance across midnight.
-  const MBA1_NOMINATIONS_CLOSE_AT = new Date('2026-09-23T00:00:00+05:30');
-  const MBA1_NOMINATIONS_OPEN = new Date() < MBA1_NOMINATIONS_CLOSE_AT;
-  if (student.cohort === 'MBA1' && !MBA1_NOMINATIONS_OPEN) {
-    // Same wording fix as app/sr-elections/page.tsx: this can now only ever
-    // fire because the cutoff passed (nominations were already open before
-    // this endpoint existed in its current form), not because they haven't
-    // started — "not open yet" would be backwards for a student hitting
-    // this after close.
-    return NextResponse.json({ error: 'Nominations are closed. Voting is now open.' }, { status: 403 });
+  // The real enforcement of the schedule in lib/srElections.ts — the page only
+  // swaps out the form, it can't stop a direct POST here. Evaluated fresh per
+  // request.
+  const election = srElectionFor(student.cohort);
+  const phase = srPhase(election);
+  if (phase !== 'nominations') {
+    const message =
+      phase === 'before'
+        ? `Nominations open on ${formatSrTime(election.nominationsOpenAt)}.`
+        : phase === 'voting'
+        ? 'Nominations are closed. Voting is now open.'
+        : 'Nominations are closed.';
+    return NextResponse.json({ error: message }, { status: 403 });
   }
 
   let body: { term?: string; picks?: Pick[] };
@@ -60,6 +59,10 @@ export async function POST(req: Request) {
 
   if (!term) {
     return NextResponse.json({ error: 'Missing term' }, { status: 400 });
+  }
+  // Only the term currently up for election — the client sends it, so never trust it as-is.
+  if (term !== election.term) {
+    return NextResponse.json({ error: `Nominations are only open for ${election.term}` }, { status: 400 });
   }
   if (picks.length === 0) {
     return NextResponse.json({ error: 'Select at least 1 subject' }, { status: 400 });

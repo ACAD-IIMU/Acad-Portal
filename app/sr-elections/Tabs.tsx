@@ -21,7 +21,8 @@ export default function SrElectionsTabs({
   voting,
   results,
   showVotingAndResults = true,
-  resultsOnly = false
+  resultsOnly = false,
+  initialTab = 'nomination'
 }: {
   nomination: ReactNode;
   voting: ReactNode;
@@ -37,11 +38,10 @@ export default function SrElectionsTabs({
   // at all (nothing else to switch to). Takes priority over
   // showVotingAndResults when both are passed.
   resultsOnly?: boolean;
+  // The tab a student can act on in the current phase (page.tsx picks it).
+  initialTab?: Tab;
 }) {
-  // BUGFIX: this was hardcoded to 'results', so every visitor — including
-  // someone who'd never nominated yet — landed on the Results tab first
-  // instead of Nomination, the only tab a new visitor can actually act on.
-  const [active, setActive] = useState<Tab>('nomination');
+  const [active, setActive] = useState<Tab>(initialTab);
 
   if (resultsOnly) {
     return <div className="flex flex-col gap-5">{results}</div>;
