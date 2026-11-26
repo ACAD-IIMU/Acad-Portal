@@ -4,6 +4,10 @@
  * Lives inside acad@iimu.ac.in (script.google.com), NOT in the portal.
  *
  * Every 30 minutes it:
+ *   0. checks whether either timetable sheet was edited (Google Drive "last updated" time —
+ *      free, no portal involved) and, only if one was, asks the portal to re-read it
+ *      (GET /api/sync-timetable). This replaced cron-job.org in Nov 2026.
+ *      Between 11 PM and 6 AM IST it stops here unless a sheet was edited (steps 1–4 skipped).
  *   1. asks the portal "what should change on the calendars?"
  *        (POST /api/calendar/invites/plan)
  *   2. carries it out:
@@ -37,6 +41,17 @@ var TIME_BUDGET_MS = 4.5 * 60 * 1000;      // Apps Script stops runs at 6 minute
 var PAUSE_BETWEEN_CALLS_MS = 150;          // be gentle with Google's rate limits
 var ALERT_EVERY_HOURS = 6;                 // don't email acad@ about the same problem more often
 
+// Timetable sheets the portal reads (same file IDs as BATCH_CONFIGS in
+// app/api/sync-timetable/route.ts — if a batch moves to a new file, change it in both places).
+var TIMETABLES = {
+  mba2: '1OjH92BHuiKBIqai-YTiR0Hx2DFZ2lkpM',            // MBA 2025-27 Batch Timetable.xlsx
+  mba1: '1U-SwYxSrFhmrfggRaVtp-v3zmnH1cKAATvjzHskArps'  // MBA 2026-28 Batch Timetable (Google Sheet)
+};
+var SETTLE_SECONDS = 180;       // wait until a sheet has been quiet this long (office mid-edit)
+var FALLBACK_EVERY_MINUTES = 60; // if acad@ can't see a sheet in Drive, ask the portal hourly instead
+var NIGHT_FROM_HOUR = 23;        // IST: no calendar runs from 11 PM ...
+var NIGHT_TO_HOUR = 6;           // ... to 6 AM, unless a timetable sheet was edited
+
 /** Run once by hand after pasting the script. Creates the 30-minute timer and shows a preview.
  *  30, not 5: every run wakes a Vercel function, and Vercel Hobby only includes 4 CPU-hours a
  *  month (Nov 2026). Don't lower this without checking Vercel → Usage → Fluid Active CPU. */
@@ -63,6 +78,19 @@ function runCalendarSync() {
   if (!lock.tryLock(5000)) return; // a previous run is still going — let it finish
 
   try {
+    // Step 0 — timetable sheets. A problem here never stops the calendar sync.
+    var timetableSynced = false;
+    try {
+      timetableSynced = checkTimetables_();
+    } catch (e) {
+      Logger.log('Timetable check failed (will retry in 30 minutes): ' + e);
+    }
+
+    // Night: nobody needs calendar changes at 2 AM, and every run wakes a Vercel function
+    // (Hobby plan: 4 CPU-hours a month). Skip — unless a sheet was just edited, so a late
+    // change still reaches calendars and phones straight away.
+    if (isNight_() && !timetableSynced) return;
+
     var plan = callPortal_('post', '/api/calendar/invites/plan', {});
     if (plan.paused) return;
     if (plan.held) {
@@ -207,6 +235,69 @@ function isAlreadyExists_(e) {
 function isNotFound_(e) {
   var code = errorCode_(e);
   return code === 404 || code === 410 || /not found|has been deleted|\b404\b|\b410\b/i.test(String(e && e.message));
+}
+
+/**
+ * Asks the portal to re-read a timetable sheet only when it was edited since the last time
+ * the portal read it. The "was it edited?" check is a Google Drive lookup done here, inside
+ * acad@ — it costs the portal (Vercel) nothing. Returns true if the portal re-read a sheet.
+ *
+ * Remembered per sheet in Script properties: TT_SEEN_<batch> = the sheet's "last updated"
+ * time that the portal has already read.
+ */
+function checkTimetables_() {
+  var props = PropertiesService.getScriptProperties();
+  var synced = false;
+  for (var batch in TIMETABLES) {
+    if (!TIMETABLES.hasOwnProperty(batch)) continue;
+    var seenKey = 'TT_SEEN_' + batch;
+    var lastUpdated = null;
+    try {
+      lastUpdated = DriveApp.getFileById(TIMETABLES[batch]).getLastUpdated().getTime();
+    } catch (e) {
+      // acad@ can't open this sheet (not shared with it?). Fall back to asking the portal
+      // hourly — the portal checks the sheet itself and skips cheaply when nothing changed.
+      var fbKey = 'TT_FALLBACK_' + batch;
+      var lastFallback = Number(props.getProperty(fbKey) || 0);
+      if (Date.now() - lastFallback < FALLBACK_EVERY_MINUTES * 60 * 1000) continue;
+      props.setProperty(fbKey, String(Date.now()));
+      alertOnce_('tt_access_' + batch, 'ACAD timetable: acad@ cannot open the ' + batch + ' sheet',
+        'acad@ could not read the ' + batch + ' timetable file in Google Drive (' + e + ').\n\n' +
+        'Timetable changes still reach the portal, but only hourly. Share the sheet with ' +
+        'acad@iimu.ac.in (Viewer is enough) to make it near-instant again.');
+      var fb = syncTimetable_(batch);
+      if (fb && !fb.skipped) synced = true;
+      continue;
+    }
+
+    if (String(lastUpdated) === props.getProperty(seenKey)) continue; // not edited — nothing to do
+    if (Date.now() - lastUpdated < SETTLE_SECONDS * 1000) continue;    // still being edited — next run
+
+    var res = syncTimetable_(batch);
+    if (!res) continue; // portal error — retried next run
+    if (res.skipped === 'settling') continue; // the portal saw a newer edit — next run
+    props.setProperty(seenKey, String(lastUpdated));
+    if (!res.skipped) synced = true; // 'unchanged' = portal already had this version
+  }
+  return synced;
+}
+
+/** GET /api/sync-timetable for one batch. Returns the portal's answer, or null on error. */
+function syncTimetable_(batch) {
+  try {
+    var res = callPortal_('get', '/api/sync-timetable?batch=' + batch + '&settle=' + SETTLE_SECONDS);
+    Logger.log('Timetable ' + batch + ': ' + (res.skipped || 'synced'));
+    return res;
+  } catch (e) {
+    Logger.log('Timetable sync for ' + batch + ' failed (will retry in 30 minutes): ' + e);
+    return null;
+  }
+}
+
+/** True between NIGHT_FROM_HOUR and NIGHT_TO_HOUR, India time. */
+function isNight_() {
+  var hour = Number(Utilities.formatDate(new Date(), 'Asia/Kolkata', 'H'));
+  return hour >= NIGHT_FROM_HOUR || hour < NIGHT_TO_HOUR;
 }
 
 function callPortal_(method, path, body) {

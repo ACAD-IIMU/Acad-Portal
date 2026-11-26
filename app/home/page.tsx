@@ -33,25 +33,6 @@ const FALLBACK_TERM_RANGES: Record<'MBA1' | 'MBA2', { start: string; end: string
 export default async function HomePage() {
   const supabase = createClient();
 
-  const { data: student } = await supabase.from('students').select('*').single();
-
-  // Which cohort is this student in RIGHT NOW — resolves which of the two current-term
-  // constants applies. `cohort` is the rotating 'MBA1'/'MBA2' label (flips once a year);
-  // `batch_label` is the stable 'MBA 2026-28' one, already a column on `students` (used
-  // for display elsewhere on this same page already, e.g. the Sidebar below) — reused
-  // directly here rather than hardcoded, so this keeps working correctly however many
-  // batches exist, not just today's two. Defaults to TERM_5/MBA2 behavior for anyone not
-  // explicitly MBA1, matching this app's only other cohort ever until now.
-  const isMba1 = student?.cohort === 'MBA1';
-  const studentTerm = isMba1 ? TERM_2 : TERM_5;
-  const studentBatchLabel = student?.batch_label;
-
-  const { count: srCount } = await supabase
-    .from('sr_assignments')
-    .select('id', { count: 'exact', head: true })
-    .eq('student_id', student?.id ?? '');
-  const isSr = (srCount ?? 0) > 0;
-
   // Computed once, explicitly in IST — the server's own runtime timezone (UTC on
   // Vercel) is irrelevant here. Using the same instant formatted two ways: one
   // machine-readable (YYYY-MM-DD, for the DB query) and one for display, so both
@@ -65,32 +46,90 @@ export default async function HomePage() {
     timeZone: 'Asia/Kolkata'
   });
 
-  const { data: earliestSession } = await supabase
-    .from('sessions')
-    .select('session_date')
-    .eq('term', studentTerm)
-    .eq('batch_label', studentBatchLabel)
-    .order('session_date', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  // Free-tier fix (Nov 2026): the queries below used to run one after another (nine round
+  // trips to Supabase, ~6–7 s per Home load on Vercel). They now run in three parallel
+  // rounds — each round only waits for what it actually depends on. Same queries, same
+  // results; RLS still scopes every one of them to the signed-in student.
 
-  const { data: latestSession } = await supabase
-    .from('sessions')
-    .select('session_date')
-    .eq('term', studentTerm)
-    .eq('batch_label', studentBatchLabel)
-    .order('session_date', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Round 1 — nothing here depends on who the student is beyond RLS.
+  const [{ data: student }, { data: todaysSessions }, { data: personalReminders }, { data: srAnnouncements }] =
+    await Promise.all([
+      supabase.from('students').select('*').single(),
+      supabase
+        .from('sessions')
+        .select('*, subjects(name), sections(section_label), prereads(*)')
+        .eq('session_date', today)
+        .order('start_time'),
+      // Personal reminders (this student's own) and SR class announcements (anything an SR
+      // has posted for a subject+section this student is enrolled in — RLS does the actual
+      // scoping, matching the same enrollment join `sessions` already uses). Both upcoming only.
+      supabase
+        .from('reminders')
+        .select('id, title, target_at, subjects(name)')
+        .eq('type', 'personal')
+        .gte('target_at', now.toISOString())
+        .order('target_at'),
+      supabase
+        .from('reminders')
+        .select('id, title, target_at, subjects(name), sections(section_label)')
+        .eq('type', 'sr_announcement')
+        .gte('target_at', now.toISOString())
+        .order('target_at')
+    ]);
 
-  // Fetched BEFORE the term window is computed, because the window has to span these too
-  // — see below. (Also reused further down for MonthView, so this isn't an extra query.)
-  const { data: allTermEvents } = await supabase
-    .from('important_events')
-    .select('*, subjects(name)')
-    .eq('term', studentTerm)
-    .eq('batch_label', studentBatchLabel)
-    .order('event_date');
+  // Which cohort is this student in RIGHT NOW — resolves which of the two current-term
+  // constants applies. `cohort` is the rotating 'MBA1'/'MBA2' label (flips once a year);
+  // `batch_label` is the stable 'MBA 2026-28' one, already a column on `students`.
+  // Defaults to TERM_5/MBA2 behavior for anyone not explicitly MBA1.
+  const isMba1 = student?.cohort === 'MBA1';
+  const studentTerm = isMba1 ? TERM_2 : TERM_5;
+  const studentBatchLabel = student?.batch_label;
+
+  // Round 2 — needs the student's id / term / batch.
+  const [{ count: srCount }, { data: earliestSession }, { data: latestSession }, { data: allTermEvents }, { data: enrolledSubjects }] =
+    await Promise.all([
+      supabase
+        .from('sr_assignments')
+        .select('id', { count: 'exact', head: true })
+        .eq('student_id', student?.id ?? ''),
+      supabase
+        .from('sessions')
+        .select('session_date')
+        .eq('term', studentTerm)
+        .eq('batch_label', studentBatchLabel)
+        .order('session_date', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('sessions')
+        .select('session_date')
+        .eq('term', studentTerm)
+        .eq('batch_label', studentBatchLabel)
+        .order('session_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Needed BEFORE the term window is computed, because the window has to span these too
+      // — see below. Also reused for MonthView and (filtered) for the upcoming-events list.
+      supabase
+        .from('important_events')
+        .select('*, subjects(name)')
+        .eq('term', studentTerm)
+        .eq('batch_label', studentBatchLabel)
+        .order('event_date'),
+      // This student's own enrolled subjects for their own current term — populates the
+      // optional subject dropdown when adding a personal reminder.
+      supabase
+        .from('enrollments')
+        .select('subject_id, subjects(name)')
+        .eq('student_id', student?.id ?? '')
+        .eq('term', studentTerm)
+    ]);
+  const isSr = (srCount ?? 0) > 0;
+
+  // Upcoming events = this term's events from today on. Same filter the separate query used
+  // to apply (term, batch, event_date >= today, ordered by date) — taken from allTermEvents
+  // instead of asking the database a second time.
+  const upcomingEvents = (allTermEvents ?? []).filter((e) => (e.event_date as string) >= today);
 
   // The term window spans sessions AND events, not sessions alone. End-term exams are
   // important_events, not sessions — Term II's run into January while the last actual
@@ -111,12 +150,7 @@ export default async function HomePage() {
     maxDate(latestSession?.session_date ?? null, lastEventDate) ??
     FALLBACK_TERM_RANGES[isMba1 ? 'MBA1' : 'MBA2'].end;
 
-  const { data: todaysSessions } = await supabase
-    .from('sessions')
-    .select('*, subjects(name), sections(section_label), prereads(*)')
-    .eq('session_date', today)
-    .order('start_time');
-
+  // Round 3 — needs the term window.
   const { data: termSessions } = await supabase
     .from('sessions')
     .select('*, subjects(name), sections(section_label)')
@@ -125,46 +159,6 @@ export default async function HomePage() {
     .order('session_date')
     .order('start_time');
 
-  const { data: upcomingEvents } = await supabase
-    .from('important_events')
-    .select('*, subjects(name)')
-    .eq('term', studentTerm)
-    .eq('batch_label', studentBatchLabel)
-    .gte('event_date', today)
-    .order('event_date');
-
-  // (allTermEvents is fetched further up — the term window depends on it.)
-
-  // New: personal reminders (this student's own) and SR class announcements (anything
-  // an SR has posted for a subject+section this student is enrolled in — RLS does the
-  // actual scoping here, matching the same enrollment join `sessions` already uses, so
-  // this can never show a different set of subjects than the student's real timetable
-  // would). Both filtered to upcoming only, same "gte now" pattern as upcomingEvents
-  // above rather than showing reminders that have already passed.
-  const { data: personalReminders } = await supabase
-    .from('reminders')
-    .select('id, title, target_at, subjects(name)')
-    .eq('type', 'personal')
-    .gte('target_at', now.toISOString())
-    .order('target_at');
-
-  const { data: srAnnouncements } = await supabase
-    .from('reminders')
-    .select('id, title, target_at, subjects(name), sections(section_label)')
-    .eq('type', 'sr_announcement')
-    .gte('target_at', now.toISOString())
-    .order('target_at');
-
-  // This student's own enrolled subjects for their own current term — populates the
-  // optional subject dropdown when adding a personal reminder ("Corp Val assignment due"
-  // etc). Scoped by student_id already, which inherently pins it to this student's own
-  // batch regardless of term label — batch_label isn't added here since it isn't
-  // confirmed to exist on `enrollments` and isn't needed for correctness given that.
-  const { data: enrolledSubjects } = await supabase
-    .from('enrollments')
-    .select('subject_id, subjects(name)')
-    .eq('student_id', student?.id ?? '')
-    .eq('term', studentTerm);
   const studentSubjects = (enrolledSubjects ?? [])
     .map((e) => ({ id: e.subject_id, name: (e.subjects as any)?.name as string | undefined }))
     .filter((s): s is { id: string; name: string } => !!s.name)

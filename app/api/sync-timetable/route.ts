@@ -10,7 +10,8 @@ import { TERM_5 } from "@/lib/term5";
 import { TERM_2 } from "@/lib/term2";
 
 // CPU (Nov 2026 fix — Vercel Hobby bills Active CPU, 4 h/month free):
-// cron-job.org calls this route every hour for each batch, but the timetable sheet changes only
+// This route used to be called every hour per batch (cron-job.org; since Nov 2026 the acad@ Apps
+// Script calls it only when a sheet was edited), but the timetable sheet changes only
 // a few times a week. Every call used to download the workbook, parse it (xlsx + strikethrough
 // XML) and rewrite sessions/important_events even when nothing had changed — ~2 s of CPU per call,
 // most of it on a cold start loading the parsing libraries.
@@ -31,13 +32,21 @@ const SKIP_UNCHANGED_TABLE = "timetable_sync_state";
 
 // Protects this endpoint from being hit by anyone but Vercel Cron / you manually.
 // Vercel Cron sends this header automatically; for manual testing, pass ?secret=... instead.
+//
+// Free-tier change (Nov 2026): cron-job.org is retired. The Apps Script inside acad@ (every 30
+// min, apps-script/acad-calendar-sync.gs) now checks each timetable file's "last edited" time
+// in Google Drive itself — free, no Vercel involved — and calls this route only when a sheet
+// was actually edited. It authenticates with the secret it already holds, in a header
+// (Authorization: Bearer CALENDAR_SYNC_SECRET), so no secret sits in a URL any more.
 function isAuthorized(req: Request): boolean {
   const url = new URL(req.url);
   const secretParam = url.searchParams.get("secret");
-  const cronHeader = req.headers.get("authorization");
+  const header = req.headers.get("authorization");
+  const isSet = (v: string | undefined): v is string => typeof v === "string" && v.length > 0;
   return (
-    secretParam === process.env.SYNC_SECRET ||
-    cronHeader === `Bearer ${process.env.CRON_SECRET}`
+    (isSet(process.env.SYNC_SECRET) && secretParam === process.env.SYNC_SECRET) ||
+    (isSet(process.env.CRON_SECRET) && header === `Bearer ${process.env.CRON_SECRET}`) ||
+    (isSet(process.env.CALENDAR_SYNC_SECRET) && header === `Bearer ${process.env.CALENDAR_SYNC_SECRET}`)
   );
 }
 

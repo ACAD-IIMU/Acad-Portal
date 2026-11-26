@@ -19,7 +19,7 @@ Calendar app.
 
 | Piece | Where it lives | Job |
 |---|---|---|
-| Timetable sync | `app/api/sync-timetable` (portal) | Reads the timetable sheet into Supabase. Daily via Vercel, every 10 min via cron-job.org |
+| Timetable sync | `app/api/sync-timetable` (portal) | Reads the timetable sheet into Supabase. Called by the Apps Script only when a sheet was edited (checked every 30 min), plus a daily full sync via Vercel Cron |
 | The brain | `lib/calendarInvites.ts` + `app/api/calendar/invites/plan` | Compares the timetable with what is on the calendars and lists what to change |
 | The hands | `apps-script/acad-calendar-sync.gs` (pasted into script.google.com **as acad@**) | Every 30 min: creates section calendars, changes events, reports back |
 | Subscribing students | `lib/calendarFeeds.ts` + `app/api/calendar/feeds/*` | Adds each student's section calendars to their own Google Calendar |
@@ -127,6 +127,8 @@ Copy the files in, then one line at a time: `git pull`, `npm install`, `npx tsc 
 2. Select all of the code, paste the new `apps-script/acad-calendar-sync.gs` over it, Save.
 3. Choose `previewPlan` → Run (approve permissions if asked). The log should show the plan.
    The existing 30-minute timer keeps running; no need to run `setupOnce` again.
+   (Nov 2026 version: Google asks once for Drive permission — the script now reads each
+   timetable sheet's "last updated" time. Approve it.)
 
 ### 7. Preview (browser)
 Open `https://acad-student-portal.vercel.app/api/calendar/invites/plan?secret=YOUR_CALENDAR_SYNC_SECRET`.
@@ -144,9 +146,21 @@ Run `supabase/calendar-feeds/control_stop_old_invites.sql`.
 The Workspace admin has blocked sharing secondary calendars inside the domain. Ask IIMU IT
 to allow internal calendar sharing ("Share all information") for iimu.ac.in.
 
-## Faster timetable sync (cron-job.org) — already set up
-- URL: `https://acad-student-portal.vercel.app/api/sync-timetable?batch=mba2&settle=180&secret=SYNC_SECRET_VALUE`
-- Schedule: every 10 minutes. A second job with `batch=mba1`.
+## Timetable sync — how it is triggered (free-tier change, Nov 2026)
+cron-job.org is no longer used (its two jobs can be deleted). Every 30 minutes the Apps Script
+asks Google Drive for each timetable sheet's "last updated" time — free, inside acad@, no
+Vercel involved — and calls `/api/sync-timetable?batch=…&settle=180` only when a sheet was
+edited and has been quiet for 3 minutes. It authenticates with `CALENDAR_SYNC_SECRET` in a
+header, so no secret is in a URL.
+- File IDs: `TIMETABLES` at the top of the script — keep them the same as `BATCH_CONFIGS`
+  in `app/api/sync-timetable/route.ts`.
+- If acad@ can't open a sheet, acad@ gets one email and the script falls back to asking the
+  portal hourly. Share the sheet with acad@ (Viewer) to fix it.
+- Night (11 PM – 6 AM IST): the calendar part of the run is skipped unless a sheet was just
+  edited. The sheet check itself still runs every 30 minutes.
+- Still a daily full sync from Vercel Cron (`vercel.json`), which also picks up parser fixes
+  after a deploy. To apply one immediately: open
+  `/api/sync-timetable?batch=mba2&force=1&secret=SYNC_SECRET_VALUE`.
 
 ## Each new term
 Update the term constant (`lib/term5.ts` / `lib/term2.ts`). New-term section calendars are

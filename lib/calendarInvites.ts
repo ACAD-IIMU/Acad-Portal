@@ -146,12 +146,16 @@ export type Settings = {
   personal_enabled: boolean;
   personal_pilot_reg_nos: string[] | null;
   personal_max_ops_per_run: number;
+  // Free-tier change (Nov 2026): send each student's direct-mode writes to Google in batches
+  // of up to 50 (one HTTP request) instead of one request per write — less CPU per write.
+  // Off by default; switch on in calendar_invite_settings once watched on a real run.
+  personal_batch_writes: boolean;
 };
 
 const SETTING_DEFAULTS: Pick<
   Settings,
   | 'feeds_enabled' | 'legacy_guests_enabled' | 'push_enabled' | 'max_new_calendars_per_run' | 'max_new_calendars_per_day'
-  | 'personal_enabled' | 'personal_pilot_reg_nos' | 'personal_max_ops_per_run'
+  | 'personal_enabled' | 'personal_pilot_reg_nos' | 'personal_max_ops_per_run' | 'personal_batch_writes'
 > = {
   feeds_enabled: false,
   legacy_guests_enabled: true,
@@ -160,7 +164,8 @@ const SETTING_DEFAULTS: Pick<
   max_new_calendars_per_day: 40,
   personal_enabled: false,
   personal_pilot_reg_nos: null,
-  personal_max_ops_per_run: 900
+  personal_max_ops_per_run: 900,
+  personal_batch_writes: false
 };
 
 export type BatchStats = {

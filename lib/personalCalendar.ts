@@ -31,7 +31,8 @@
 //   - Writes ask Google to send back only the event id (`fields: 'id'`), not the whole event,
 //     so less JSON is parsed per call.
 
-import { calendarForRefreshToken, type calendar_v3 } from '@/lib/googleClients';
+import { accessTokenForRefreshToken, calendarForRefreshToken, type calendar_v3 } from '@/lib/googleClients';
+import { MAX_CALLS_PER_BATCH, batchError, calendarBatch, type BatchCall, type BatchResult } from '@/lib/calendarBatch';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   BATCH_TERMS,
@@ -273,6 +274,10 @@ export async function runPersonalSync(
         all_day: d.entry.timing.allDay, location: d.entry.location
       };
       if (!l) {
+        // Free-tier fix (Nov 2026): the ledger is now loaded for upcoming classes only (see
+        // loadLedger), so a class that has already started is simply not in it. Never create
+        // a past class — the same rule as "never touch a class that has started" below.
+        if (Date.parse(d.entry.timing.startAt) < now) continue;
         ops.push({ kind: 'create', studentId: d.studentId, origin: d.entry.origin, batchLabel, eventId, resource: entryResource(eventId, d.entry), row });
         pendingCreates.set(d.studentId, (pendingCreates.get(d.studentId) ?? 0) + 1);
         continue;
@@ -382,7 +387,122 @@ export async function runPersonalSync(
     }
   };
 
+  // Batched variant of runStudent (settings.personal_batch_writes) — same decisions, same
+  // bookkeeping, but up to 50 writes per HTTP request (lib/calendarBatch.ts). Only used with the
+  // real Google client; the sandbox simulation (custom calendarFor) always takes the plain path.
+  const useBatches = settings.personal_batch_writes && calendarFor === defaultCalendarFor;
+
+  const runStudentBatched = async (studentId: string, list: Op[]) => {
+    const token = tokenById.get(studentId);
+    if (!token) return;
+    let accessToken: string;
+    try {
+      accessToken = await accessTokenForRefreshToken(token.refresh_token);
+    } catch (e: any) {
+      result.failed++;
+      result.left += list.length - 1;
+      if (classify(e) === 'token') tokenBroken.add(studentId);
+      else console.error('direct calendar token refresh failed:', studentId, String(e?.message ?? e).slice(0, 200));
+      return;
+    }
+
+    const eventsPath = '/calendar/v3/calendars/primary/events';
+    const insertCall = (op: Op): BatchCall => ({ method: 'POST', path: `${eventsPath}?sendUpdates=none&fields=${ID_ONLY}`, body: op.resource });
+    const updateCall = (op: Op): BatchCall => ({
+      method: 'PUT',
+      path: `${eventsPath}/${encodeURIComponent(op.eventId)}?sendUpdates=none&fields=${ID_ONLY}`,
+      body: op.resource
+    });
+    const deleteCall = (op: Op): BatchCall => ({ method: 'DELETE', path: `${eventsPath}/${encodeURIComponent(op.eventId)}?sendUpdates=none` });
+    const firstCall = (op: Op): BatchCall =>
+      op.kind === 'create' ? insertCall(op) : op.kind === 'delete' ? deleteCall(op) : updateCall(op);
+    const ok = (r: BatchResult) => r.status >= 200 && r.status < 300;
+
+    const upserts: Record<string, unknown>[] = [];
+    const deletes: string[] = [];
+    for (let i = 0; i < list.length; i += MAX_CALLS_PER_BATCH) {
+      if (Date.now() > deadline) {
+        result.left += list.length - i;
+        break;
+      }
+      const group = list.slice(i, i + MAX_CALLS_PER_BATCH);
+      const after = list.length - i - group.length; // writes after this group
+      let outcome: (BatchResult | 'done')[];
+      try {
+        outcome = await calendarBatch(accessToken, group.map(firstCall));
+        // Same fallbacks as the one-by-one path: create that already exists → update (revive);
+        // update/cancel of an event the student deleted → insert; delete of a gone event → done.
+        const retryIdx: number[] = [];
+        const retryCalls: BatchCall[] = [];
+        outcome.forEach((r, k) => {
+          if (r === 'done' || ok(r)) return;
+          const kind = classify(batchError(r));
+          const op = group[k];
+          if (op.kind === 'create' && kind === 'exists') {
+            retryIdx.push(k);
+            retryCalls.push(updateCall(op));
+          } else if ((op.kind === 'update' || op.kind === 'cancel') && kind === 'notFound') {
+            retryIdx.push(k);
+            retryCalls.push(insertCall(op));
+          } else if (op.kind === 'delete' && kind === 'notFound') {
+            outcome[k] = 'done';
+          }
+        });
+        if (retryCalls.length > 0) {
+          const retried = await calendarBatch(accessToken, retryCalls);
+          retryIdx.forEach((k, j) => (outcome[k] = retried[j]));
+        }
+      } catch (e: any) {
+        // The whole batch request failed — treat like a failure of its first write.
+        const kind = classify(e);
+        result.failed++;
+        result.left += list.length - i - 1;
+        if (kind === 'token') tokenBroken.add(studentId);
+        else if (kind !== 'rate') console.error('direct calendar batch failed:', studentId, String(e?.message ?? e).slice(0, 200));
+        break;
+      }
+
+      let stop = false;
+      outcome.forEach((r, k) => {
+        const op = group[k];
+        if (r === 'done' || ok(r)) {
+          if (op.kind === 'create') {
+            createdCount.set(studentId, (createdCount.get(studentId) ?? 0) + 1);
+            upserts.push({ ...op.row!, missing_since: null, cancelled_at: null, updated_at: new Date().toISOString() });
+          } else if (op.kind === 'update' || op.kind === 'cancel') {
+            upserts.push({
+              ...op.row!,
+              missing_since: null,
+              cancelled_at: op.kind === 'cancel' ? new Date().toISOString() : null,
+              updated_at: new Date().toISOString()
+            });
+          } else {
+            deletes.push(op.origin);
+          }
+          result.done++;
+          return;
+        }
+        const kind = classify(batchError(r));
+        result.failed++;
+        if (kind === 'token') {
+          tokenBroken.add(studentId);
+          stop = true;
+        } else if (kind === 'rate') {
+          stop = true; // the rest is picked up next run
+        } else {
+          console.error('direct calendar write failed:', op.kind, studentId, `${r.status}`, JSON.stringify(r.body ?? '').slice(0, 200));
+        }
+      });
+      if (stop) {
+        result.left += after;
+        break;
+      }
+    }
+    await save(upserts, deletes, studentId);
+  };
+
   const runStudent = async (studentId: string, list: Op[]) => {
+    if (useBatches) return runStudentBatched(studentId, list);
     const token = tokenById.get(studentId);
     if (!token) return;
     const cal = await calendarFor(token);
@@ -528,12 +648,23 @@ async function removeSectionCalendars(
   return removed;
 }
 
-// The ledger for one batch, read in parallel pages (it holds tens of thousands of rows).
+// Free-tier fix (Nov 2026): only rows for classes that haven't started yet (with a small
+// margin) are downloaded. Past rows were ~half the table and growing every day, yet every
+// rule in runPersonalSync skips a class that has started — so downloading them was pure
+// Supabase egress (~25 MB per full run). Old rows are also deleted daily by
+// supabase/free-tier/step2_cleanup.sql.
+const LEDGER_PAST_MARGIN_MS = 6 * 60 * 60 * 1000;
+const LEDGER_COLUMNS =
+  'student_id, origin, batch_label, event_id, content_hash, summary, start_at, end_at, all_day, location, missing_since, cancelled_at';
+
+// The ledger for one batch (upcoming classes only), read in parallel pages.
 async function loadLedger(admin: SupabaseClient, batchLabel: string): Promise<LedgerRow[]> {
+  const sinceIso = new Date(Date.now() - LEDGER_PAST_MARGIN_MS).toISOString();
   const { count, error } = await admin
     .from('calendar_personal_ledger')
     .select('student_id', { count: 'exact', head: true })
-    .eq('batch_label', batchLabel);
+    .eq('batch_label', batchLabel)
+    .gte('start_at', sinceIso);
   if (error) throw new Error(`calendar_personal_ledger count: ${error.message}`);
   const pageSize = 1000;
   const pages = Math.ceil((count ?? 0) / pageSize) + 1; // +1 in case rows were added meanwhile
@@ -543,8 +674,9 @@ async function loadLedger(admin: SupabaseClient, batchLabel: string): Promise<Le
       group.map((i) =>
         admin
           .from('calendar_personal_ledger')
-          .select('*')
+          .select(LEDGER_COLUMNS)
           .eq('batch_label', batchLabel)
+          .gte('start_at', sinceIso)
           .order('student_id')
           .order('origin')
           .range(i * pageSize, i * pageSize + pageSize - 1)
