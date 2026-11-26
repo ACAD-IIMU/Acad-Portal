@@ -21,6 +21,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
+import { srElectionFor, srPhase } from '@/lib/srElections';
+
+const SR_HREF = '/sr-elections';
 
 type NavItem = {
   href: string;
@@ -119,6 +122,15 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
     });
   }
 
+  // Easter-egg glow on SR Elections while the viewer's batch has an election
+  // coming up or running (lib/srElections.ts), until voting closes. Worked out
+  // after mount so the server's and browser's clocks can't disagree mid-render.
+  const [srLive, setSrLive] = useState(false);
+  useEffect(() => {
+    setSrLive(srPhase(srElectionFor(cohort)) !== 'closed');
+  }, [cohort]);
+  const srGlowing = srLive && visibleNavItems.some((i) => i.href === SR_HREF);
+
   const showLabels = !hydrated || !collapsed;
   const railWidth = hydrated && collapsed ? 'md:w-[76px]' : 'md:w-[250px]';
 
@@ -131,12 +143,14 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
       <div className="md:hidden sticky top-0 z-30 flex items-center gap-3 h-14 px-4 bg-white/95 backdrop-blur border-b border-line">
         <button
           onClick={() => setOpen(true)}
-          aria-label="Open menu"
-          className="w-9 h-9 -ml-1 rounded-lg flex items-center justify-center text-brand-950 hover:bg-brand-50"
+          aria-label={srGlowing ? 'Open menu (SR Elections is live)' : 'Open menu'}
+          className="relative w-9 h-9 -ml-1 rounded-lg flex items-center justify-center text-brand-950 hover:bg-brand-50"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M4 6h16M4 12h16M4 18h16" />
           </svg>
+          {/* Phones: the menu is hidden, so hint that something's glowing inside. */}
+          {srGlowing && <span aria-hidden="true" className="sr-quest-dot absolute top-1 right-1" />}
         </button>
         <Image src="/acad-logo.png" alt="ACAD" width={28} height={28} className="rounded-md" />
         <span className="text-sm font-semibold text-brand-950">ACAD Portal</span>
@@ -206,20 +220,31 @@ export default function Sidebar({ batchLabel, cohort }: { batchLabel?: string; c
         <nav className="flex flex-col gap-1">
           {visibleNavItems.map((item) => {
             const isActive = pathname === item.href;
+            const glow = srGlowing && item.href === SR_HREF;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                title={collapsed ? item.label : undefined}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                title={collapsed ? (glow ? `${item.label} — it's live!` : item.label) : undefined}
+                className={`relative flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
                   collapsed ? 'md:justify-center md:px-0' : ''
-                } ${isActive ? 'bg-white/15 text-white' : 'text-brand-100/85 hover:bg-white/5 hover:text-white'}`}
+                } ${isActive ? 'bg-white/15 text-white' : 'text-brand-100/85 hover:bg-white/5 hover:text-white'} ${
+                  glow ? (isActive ? 'sr-quest sr-quest-calm' : 'sr-quest') : ''
+                }`}
               >
                 <svg className="w-[18px] h-[18px] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   {item.icon}
                 </svg>
                 <span className={collapsed ? 'md:hidden' : ''}>{item.label}</span>
+                {glow && (
+                  <span
+                    aria-hidden="true"
+                    className={`sr-quest-sparkle ${collapsed ? 'md:absolute md:top-0.5 md:right-1.5' : 'ml-auto'}`}
+                  >
+                    ✦
+                  </span>
+                )}
               </Link>
             );
           })}
