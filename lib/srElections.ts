@@ -45,16 +45,16 @@ const ELECTIONS: Record<'MBA1' | 'MBA2', SrElection> = {
     excludedSubjects: [],
   },
   // MBA2 (2025-27), Term VI. Same rhythm as the Term II election: 2 days of
-  // nominations, then 2 days of voting, each closing at midnight IST.
-  // PLACEHOLDER DATES — confirm with ACAD before deploying. Before nominations
-  // open, all of these must exist in Supabase for 'Term VI' (see
-  // supabase/sr-elections-term-vi/): subjects, sections, enrollments, and the
-  // sr_votes_term_vi table.
+  // nominations, then 2 days of voting, each closing at midnight IST. Moved one
+  // day later (from 28 Nov) to leave time to load the Capstone section list.
+  // Before nominations open, all of these must exist in Supabase for 'Term VI'
+  // (see supabase/sr-elections-term-vi/): subjects, sections, enrollments
+  // (Capstone included), and the sr_votes_term_vi table.
   MBA2: {
     term: TERM_6,
-    nominationsOpenAt: new Date('2026-11-28T00:00:00+05:30'),
-    nominationsCloseAt: new Date('2026-11-30T00:00:00+05:30'),
-    votingCloseAt: new Date('2026-12-02T00:00:00+05:30'),
+    nominationsOpenAt: new Date('2026-11-29T00:00:00+05:30'),
+    nominationsCloseAt: new Date('2026-12-01T00:00:00+05:30'),
+    votingCloseAt: new Date('2026-12-03T00:00:00+05:30'),
     excludedSubjects: [],
     previousTerm: TERM_5,
   },
