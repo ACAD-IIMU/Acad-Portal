@@ -34,6 +34,7 @@ import UserMenu from '@/components/UserMenu';
 import NominationForm from './NominationForm';
 import VotingForm from './VotingForm';
 import SrElectionsTabs from './Tabs';
+import LaunchBanner from './LaunchBanner';
 import Results from './Results';
 import type { ReactNode } from 'react';
 
@@ -280,11 +281,14 @@ export default async function SrElectionsPage() {
           )}
         </div>
         {showingPrevious && (
-          <p className="card p-4 text-sm text-inkSoft border-brand-100 bg-brand-50">
-            {election.term} SR nominations open on{' '}
-            <b className="text-ink">{formatSrTime(election.nominationsOpenAt)}</b>. Until then, here are
-            your {TERM} Subject Representatives.
-          </p>
+          <LaunchBanner id={election.term}>
+            <p className="font-display text-base font-semibold text-brand-900">Now or never (literally).</p>
+            <p className="mt-1">
+              {election.term} SR nominations open on{' '}
+              <b className="text-ink">{formatSrTime(election.nominationsOpenAt)}</b> — the last SR
+              election of your MBA. Until then, here are the {TERM} SRs who held the fort.
+            </p>
+          </LaunchBanner>
         )}
         <SrElectionsTabs
           nomination={nominationContent}

@@ -15,3 +15,46 @@ h1, h2, h3 {
 .card {
   @apply bg-white border border-line rounded-card shadow-sm;
 }
+
+/* SR Elections launch banner (app/sr-elections/LaunchBanner.tsx): the tile
+   zooms in with an overshoot, lands as the confetti fires, does an excited
+   shake, then a shimmer sweeps across it. Fill modes stay "backwards" so no
+   transform lingers once it ends. */
+.sr-launch-in {
+  animation:
+    sr-launch-zoom 560ms cubic-bezier(0.2, 0.9, 0.3, 1.4) backwards,
+    sr-launch-shake 650ms ease-in-out 560ms;
+}
+.sr-launch-in::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.7) 50%, transparent 70%);
+  /* Parked off-screen when not animating, so nothing stays layered on top. */
+  transform: translateX(120%);
+  animation: sr-launch-shimmer 1000ms ease-out 1150ms backwards;
+  pointer-events: none;
+}
+@keyframes sr-launch-zoom {
+  0%   { opacity: 0; transform: scale(0.5); }
+  60%  { opacity: 1; transform: scale(1.07); }
+  80%  { transform: scale(0.98); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes sr-launch-shake {
+  0%, 100% { transform: none; }
+  12% { transform: translateX(-7px) rotate(-2deg); }
+  26% { transform: translateX(6px) rotate(1.6deg); }
+  40% { transform: translateX(-5px) rotate(-1.2deg); }
+  54% { transform: translateX(4px) rotate(0.9deg); }
+  68% { transform: translateX(-2px) rotate(-0.5deg); }
+  82% { transform: translateX(1px) rotate(0.2deg); }
+}
+@keyframes sr-launch-shimmer {
+  from { transform: translateX(-120%); }
+  to   { transform: translateX(120%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sr-launch-in { animation: none; }
+  .sr-launch-in::after { display: none; }
+}
